@@ -37,10 +37,19 @@ def save_screenshots(actions, script_path):
     
     return screenshot_map
 
-def generate_script(actions, move_event_stride=5, output_path=None):
+def generate_script(actions, move_event_stride=5, output_path=None, tolerance_level="Medium"):
     screenshot_map = {}
     if output_path:
         screenshot_map = save_screenshots(actions, output_path)
+    
+    # Map tolerance level to numeric value
+    tolerance_value = 7  # Default Medium
+    if tolerance_level == "Low":
+        tolerance_value = 3
+    elif tolerance_level == "Medium":
+        tolerance_value = 7
+    elif tolerance_level == "High":
+        tolerance_value = 10
     
     # Add imports and helper functions
     lines = [
@@ -52,7 +61,7 @@ def generate_script(actions, move_event_stride=5, output_path=None):
         'pyautogui.FAILSAFE = True',
         '',
         '# Visual verification settings',
-        'TOLERANCE = 15  # Adjust as needed',
+        f'TOLERANCE = {tolerance_value}  # Tolerance level: {tolerance_level}',
         'VERIFICATION_ENABLED = True  # Set to False to disable visual verification',
         '',
         'def images_are_similar(img1, img2, tolerance=TOLERANCE):',

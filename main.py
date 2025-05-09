@@ -9,7 +9,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-from qtgui.main_window import MainWindow
+from gui.main_window import MainWindow
 from PyQt6.QtWidgets import QApplication
 
 
