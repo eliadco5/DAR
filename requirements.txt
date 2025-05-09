@@ -1,5 +1,4 @@
 pyautogui
 pynput
 pillow
-tkinter
 pyperclip 

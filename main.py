@@ -1,6 +1,9 @@
+from gui.main_window import MainWindow
+
+
 def main():
-    # TODO: Launch the main GUI window
-    pass
+    app = MainWindow()
+    app.root.mainloop()
 
 if __name__ == "__main__":
     main() 
