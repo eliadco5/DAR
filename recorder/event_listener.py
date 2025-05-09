@@ -2,6 +2,38 @@
 from pynput import mouse, keyboard
 import time
 from recorder.screenshot import ScreenshotUtil
+import ast
+
+CONTROL_CHAR_TO_KEY = {
+    chr(i): c for i, c in zip(range(1, 27), 'abcdefghijklmnopqrstuvwxyz')
+}
+MODIFIER_KEYS = {
+    'Key.ctrl': 'ctrl', 'Key.ctrl_l': 'ctrl', 'Key.ctrl_r': 'ctrl',
+    'Key.alt': 'alt', 'Key.alt_l': 'alt', 'Key.alt_r': 'alt',
+    'Key.shift': 'shift', 'Key.shift_l': 'shift', 'Key.shift_r': 'shift',
+}
+
+def normalize_key(key):
+    # Modifier keys
+    if key in MODIFIER_KEYS:
+        return MODIFIER_KEYS[key]
+    # Key like 'a', 'b', etc.
+    if len(key) == 1 and key.isprintable():
+        return key
+    # Control character (e.g., '\x03')
+    try:
+        k = ast.literal_eval(key) if (key.startswith("'") or key.startswith('"')) else key
+        if isinstance(k, str) and len(k) == 1 and ord(k) < 32:
+            mapped = CONTROL_CHAR_TO_KEY.get(k)
+            if mapped:
+                return mapped
+            else:
+                return ''
+        if isinstance(k, str) and k.isprintable():
+            return k
+        return k
+    except Exception:
+        return key.strip("'\"")
 
 class EventListener:
     def __init__(self):
@@ -53,10 +85,12 @@ class EventListener:
         if not self.recording:
             return
         timestamp = time.time() - self.start_time
+        key_str = str(key)
+        norm_key = normalize_key(key_str)
         self.events.append({
             'type': 'keyboard',
             'event': 'down',
-            'key': str(key),
+            'key': norm_key,
             'timestamp': timestamp
         })
 
@@ -64,10 +98,12 @@ class EventListener:
         if not self.recording:
             return
         timestamp = time.time() - self.start_time
+        key_str = str(key)
+        norm_key = normalize_key(key_str)
         self.events.append({
             'type': 'keyboard',
             'event': 'up',
-            'key': str(key),
+            'key': norm_key,
             'timestamp': timestamp
         })
 

@@ -29,6 +29,8 @@ class MainWindow:
 
         self.actions_listbox = tk.Listbox(self.root, width=80, height=10)
         self.actions_listbox.pack(pady=10)
+        self.actions_listbox.bind('<Delete>', lambda e: self.delete_action())
+        self.actions_listbox.bind('<BackSpace>', lambda e: self.delete_action())
 
         self.edit_frame = tk.Frame(self.root)
         self.edit_frame.pack(pady=5)
