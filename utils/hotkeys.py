@@ -10,17 +10,22 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger("HotkeyManager")
 
 class HotkeyManager:
-    def __init__(self, on_pause=None, on_stop=None, on_check=None, on_resume=None):
+    def __init__(self, on_pause=None, on_stop=None, on_check=None, on_resume=None, on_comment=None):
         self.on_pause = on_pause
         self.on_stop = on_stop
         self.on_check = on_check
         self.on_resume = on_resume
+        self.on_comment = on_comment
         self.listener = None
         self._thread = None
 
     def _on_press(self, key):
         try:
             match key:
+                case keyboard.Key.f6:
+                    logger.info("F6 hotkey detected, triggering comment")
+                    if self.on_comment:
+                        self.on_comment()
                 case keyboard.Key.f7:
                     logger.info("F7 hotkey detected, triggering check")
                     if self.on_check:

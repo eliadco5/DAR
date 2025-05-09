@@ -66,6 +66,23 @@ def generate_script(actions, move_event_stride=5, output_path=None, tolerance_le
         action = actions[i]
         t = action.get('timestamp', 0)
         wait = t - last_time if t > last_time else 0
+        
+        # Handle comments
+        if action['type'] == 'comment':
+            comment_text = action.get('comment', 'Comment')
+            # Add a blank line before comment for better readability
+            action_lines.append('')
+            # Format the comment with a section header style for better visibility
+            action_lines.append(f"# {'=' * 20}")
+            action_lines.append(f"# {comment_text}")
+            action_lines.append(f"# {'=' * 20}")
+            action_lines.append('')
+            # Print the comment to console when script runs
+            action_lines.append(f'print(f"\\n[COMMENT] {comment_text}\\n")')
+            i += 1
+            last_time = t
+            continue
+            
         if action['type'] == 'mouse' and action['event'] == 'move':
             move_count += 1
             if move_count % move_event_stride != 0:
