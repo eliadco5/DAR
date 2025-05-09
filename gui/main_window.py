@@ -621,15 +621,201 @@ class MainWindow(QMainWindow):
             self.session_manager.pause()
             # Update the UI to show the paused state
             self.update_pause_resume_button(paused=True)
+            
+        # On Windows, prepare for better window focus handling
+        try_windows_focus = False
+        if sys.platform == 'win32':
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                # Remember the current foreground window so we can force focus later
+                foreground_hwnd = user32.GetForegroundWindow()
+                # Set a low-level Windows hook to capture focus
+                try_windows_focus = True
+            except:
+                print("DEBUG: Windows focus utilities not available")
+                pass
         
-        # Show dialog to get check name
-        check_name, ok = QInputDialog.getText(
-            self,
-            "Name Your Visual Check",
-            "Enter a descriptive name for this visual check point:",
-            QLineEdit.EchoMode.Normal,
-            f"Check_{len(self.action_editor.get_actions()) + 1}"
-        )
+        # Create a custom dialog that will stay on top of all windows
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel
+        from PyQt6.QtCore import Qt
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Name Your Visual Check")
+        # Set strong always-on-top flags to ensure dialog is visible and gets focus
+        dialog.setWindowFlags(
+            dialog.windowFlags() | 
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.X11BypassWindowManagerHint |  # More forceful on Linux
+            Qt.WindowType.Tool  # Makes it a tool window which typically has higher z-order
+        ) 
+        # Set the dialog as a top-level window
+        dialog.setParent(None, dialog.windowFlags())
+        dialog.setMinimumWidth(400)
+        dialog.setModal(True)
+        
+        # Apply theme-appropriate styling
+        if self.is_dark:
+            dialog.setStyleSheet("""
+                QDialog { background-color: #232629; color: #f0f0f0; }
+                QLabel { color: #f0f0f0; font-size: 14px; }
+                QLineEdit { 
+                    background-color: #323639; 
+                    color: #f0f0f0; 
+                    border: 1px solid #444; 
+                    border-radius: 4px; 
+                    padding: 6px;
+                }
+                QPushButton { 
+                    background-color: #323639; 
+                    color: #f0f0f0; 
+                    border: 1px solid #444; 
+                    border-radius: 4px; 
+                    padding: 6px 16px;
+                    min-width: 80px;
+                }
+                QPushButton:hover { background-color: #3a3f44; }
+                QPushButton:pressed { background-color: #232629; }
+            """)
+        else:
+            dialog.setStyleSheet("""
+                QDialog { background-color: #f4f4f4; color: #232629; }
+                QLabel { color: #232629; font-size: 14px; }
+                QLineEdit { 
+                    background-color: #ffffff; 
+                    color: #232629; 
+                    border: 1px solid #bbb; 
+                    border-radius: 4px; 
+                    padding: 6px;
+                }
+                QPushButton { 
+                    background-color: #f4f4f4; 
+                    color: #232629; 
+                    border: 1px solid #bbb; 
+                    border-radius: 4px; 
+                    padding: 6px 16px;
+                    min-width: 80px;
+                }
+                QPushButton:hover { background-color: #e0e0e0; }
+                QPushButton:pressed { background-color: #eaeaea; }
+            """)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # Add instruction label
+        instruction = QLabel("Enter a descriptive name for this visual check point:")
+        instruction.setWordWrap(True)
+        layout.addWidget(instruction)
+        
+        # Add line edit for check name
+        from PyQt6.QtWidgets import QLineEdit
+        line_edit = QLineEdit(f"Check_{len(self.action_editor.get_actions()) + 1}")
+        line_edit.selectAll()  # Select all text for easy editing
+        line_edit.setMinimumHeight(32)
+        layout.addWidget(line_edit)
+        
+        # Add spacer
+        layout.addSpacing(10)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        ok_button = QPushButton("OK")
+        cancel_button = QPushButton("Cancel")
+        ok_button.setMinimumHeight(32)
+        cancel_button.setMinimumHeight(32)
+        ok_button.setDefault(True)  # Make OK the default button (Enter key)
+        
+        # Connect buttons
+        ok_button.clicked.connect(dialog.accept)
+        cancel_button.clicked.connect(dialog.reject)
+        
+        button_layout.addWidget(cancel_button)
+        button_layout.addWidget(ok_button)
+        layout.addLayout(button_layout)
+        
+        # Center the dialog on the screen
+        dialog.adjustSize()  # Make sure dialog is properly sized before centering
+        center_point = QApplication.primaryScreen().availableGeometry().center()
+        dialog_rect = dialog.frameGeometry()
+        dialog_rect.moveCenter(center_point)
+        dialog.move(dialog_rect.topLeft())
+        
+        # Set up focus and input focus
+        line_edit.setFocus()  # Pre-set the focus to the line edit
+        
+        # Force dialog to the foreground
+        dialog.setWindowState(dialog.windowState() & ~Qt.WindowState.WindowMinimized | Qt.WindowState.WindowActive)
+        
+        # Set up a timer to ensure dialog gets focus
+        def force_focus():
+            dialog.activateWindow()
+            dialog.raise_()
+            line_edit.setFocus()
+            
+            # Windows-specific focus handling
+            if try_windows_focus:
+                try:
+                    # Get dialog window handle
+                    hwnd = int(dialog.winId())
+                    
+                    # Windows constants
+                    HWND_TOPMOST = -1
+                    SWP_NOSIZE = 0x0001
+                    SWP_NOMOVE = 0x0002
+                    
+                    # Force window to top and give it focus
+                    user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
+                    user32.SetForegroundWindow(hwnd)
+                    user32.SetFocus(hwnd)
+                    user32.SetActiveWindow(hwnd)
+                    
+                    # Flash window in taskbar to get user attention
+                    user32.FlashWindow(hwnd, True)
+                except Exception as e:
+                    print(f"DEBUG: Windows focus error: {e}")
+                    pass
+        
+        # Use multiple timers with different delays to handle race conditions with window managers
+        QTimer.singleShot(50, force_focus)
+        QTimer.singleShot(150, force_focus)
+        QTimer.singleShot(300, force_focus)
+        
+        # Short delay before showing dialog to let the system prepare
+        # This helps with focus issues on some platforms
+        time.sleep(0.1)
+        
+        # Set up keyboard handling to improve focus
+        def keyPressEvent(event):
+            if event.key() == Qt.Key.Key_Escape:
+                dialog.reject()
+            elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                dialog.accept()
+            else:
+                # Pass other key events to line_edit if not already focused
+                if not line_edit.hasFocus():
+                    line_edit.setFocus()
+                    # If it's a character key, set the text to that character
+                    if event.text() and event.text().isprintable():
+                        line_edit.setText(event.text())
+                        line_edit.setCursorPosition(len(event.text()))
+                
+        # Install the key press handler
+        dialog.keyPressEvent = keyPressEvent
+        
+        # Show dialog and get result - exec() will block until dialog is closed
+        result = dialog.exec()
+        
+        # Get the check name if OK was clicked
+        if result == QDialog.DialogCode.Accepted:
+            check_name = line_edit.text()
+            ok = True
+        else:
+            check_name = ""
+            ok = False
         
         # Resume recording if it was active before
         if was_recording:
