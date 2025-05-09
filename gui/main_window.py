@@ -284,9 +284,20 @@ class MainWindow(QMainWindow):
         self.update_action_list()
 
     def _poll_actions(self):
-        if self.session_manager.state == 'recording':
-            self.update_action_list()
-            QTimer.singleShot(100, self._poll_actions)
+        """Poll for new actions and update the UI.
+        This method will recursively schedule itself while recording is active.
+        """
+        # Only poll if the state is currently recording
+        if self.session_manager.state != 'recording':
+            print("DEBUG: Polling stopped because state is", self.session_manager.state)
+            return
+            
+        # Update the action list with the latest events
+        self.update_action_list()
+        
+        # Schedule the next poll
+        print("DEBUG: Polling for actions...")
+        QTimer.singleShot(100, self._poll_actions)
 
     def update_action_list(self):
         actions = self.session_manager.get_events()
@@ -598,10 +609,18 @@ class MainWindow(QMainWindow):
         
     def _execute_add_check(self):
         """Executes in the main thread via signal/slot mechanism"""
-        # Pause recording temporarily while showing the dialog
+        # Store current recording state
         was_recording = self.session_manager.state == 'recording'
+        current_state = self.session_manager.state
+        
+        print(f"DEBUG: Executing add check. Current state: {current_state}")
+        
+        # Pause recording temporarily while showing the dialog
         if was_recording:
+            print("DEBUG: Pausing recording for check dialog")
             self.session_manager.pause()
+            # Update the UI to show the paused state
+            self.update_pause_resume_button(paused=True)
         
         # Show dialog to get check name
         check_name, ok = QInputDialog.getText(
@@ -612,11 +631,18 @@ class MainWindow(QMainWindow):
             f"Check_{len(self.action_editor.get_actions()) + 1}"
         )
         
+        # Resume recording if it was active before
+        if was_recording:
+            print("DEBUG: Resuming recording after check dialog")
+            # Resume and make sure listeners are active
+            self.session_manager.resume()
+            self.update_pause_resume_button(paused=False)
+            self.status_label.setText("Recording...")
+            # Restart polling for events
+            self._poll_actions()
+        
         if not ok:
-            # User canceled, resume recording if it was active
-            if was_recording:
-                self.session_manager.resume()
-                self.status_label.setText("Recording...")
+            # User canceled, but recording has already been resumed if needed
             return
         
         # Default name if user provided empty string
@@ -648,12 +674,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(3000, lambda: self.status_label.setText(
             "Recording..." if self.session_manager.state == 'recording' else 
             "Paused" if self.session_manager.state == 'paused' else "Stopped"))
-        
-        # Resume recording if it was active
-        if was_recording:
-            self.session_manager.resume()
-            self.status_label.setText("Recording...")
-
+            
     def on_visual_check_failed(self, ref_img, test_img):
         """Called from background thread when a visual check fails"""
         self.failed_check_images = (ref_img, test_img)
@@ -806,10 +827,13 @@ class MainWindow(QMainWindow):
         self.playback_thread.start()
 
     def resume_recording(self):
+        """Resume recording after it was paused"""
+        print("DEBUG: Manual resume requested")
         self.session_manager.resume()
         self.status_label.setText("Recording...")
         self.update_pause_resume_button(paused=False)
-        self._poll_actions()  # Resume polling for actions
+        # Make sure polling is restarted
+        self._poll_actions()
 
     def update_pause_resume_button(self, paused=True):
         if paused:

@@ -126,12 +126,42 @@ class EventListener:
         self.keyboard_listener.start()
 
     def pause(self):
-        self.recording = False
+        """
+        Pause recording but keep the listeners active.
+        This allows for quick resuming without creating new listeners.
+        """
+        if self.recording:
+            print("DEBUG: Pausing event recording (listeners remain active)")
+            self.recording = False
 
     def resume(self):
         if not self.recording:
+            # Check if listeners are not running and restart them if needed
+            if self.mouse_listener is None or not self.mouse_listener.is_alive():
+                self.mouse_listener = mouse.Listener(
+                    on_click=self._on_click,
+                    on_move=self._on_move,
+                    on_scroll=self._on_scroll
+                )
+                self.mouse_listener.start()
+                
+            if self.keyboard_listener is None or not self.keyboard_listener.is_alive():
+                self.keyboard_listener = keyboard.Listener(
+                    on_press=self._on_press,
+                    on_release=self._on_release
+                )
+                self.keyboard_listener.start()
+                
+            # Resume recording
             self.recording = True
-            self.start_time = time.time() - (self.events[-1]['timestamp'] if self.events else 0)
+            if self.events:
+                # Calculate start time based on the last event's timestamp
+                self.start_time = time.time() - self.events[-1]['timestamp']
+            else:
+                # No previous events, just start fresh
+                self.start_time = time.time()
+            
+            print(f"DEBUG: Event listener resumed. Listeners active: Mouse={self.mouse_listener.is_alive() if self.mouse_listener else False}, Keyboard={self.keyboard_listener.is_alive() if self.keyboard_listener else False}")
 
     def stop(self):
         self.recording = False
