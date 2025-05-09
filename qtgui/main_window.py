@@ -202,6 +202,7 @@ class MainWindow(QMainWindow):
             elif action['type'] == 'keyboard':
                 desc += f"{action['event']} key {action.get('key', '')}"
             self.action_list.addItem(desc)
+        self.action_list.scrollToBottom()
 
     def delete_action(self):
         row = self.action_list.currentRow()
