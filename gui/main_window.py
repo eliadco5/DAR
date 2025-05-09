@@ -51,6 +51,10 @@ class MainWindow:
         self.load_button = tk.Button(self.save_load_frame, text="Load", command=self.load_session)
         self.load_button.grid(row=0, column=1, padx=5)
 
+        # Export as Script button
+        self.export_script_button = tk.Button(self.root, text="Export as Script", command=self.export_script)
+        self.export_script_button.pack(pady=5)
+
         self.hotkeys = HotkeyManager(on_pause=self.pause_recording, on_stop=self.stop_recording)
         self.hotkeys.start()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -170,4 +174,17 @@ class MainWindow:
                 self.update_action_list()
                 messagebox.showinfo("Loaded", f"Session loaded from {filepath}")
             except Exception as e:
-                messagebox.showerror("Error", f"Could not load session: {e}") 
+                messagebox.showerror("Error", f"Could not load session: {e}")
+
+    def export_script(self):
+        from tkinter import filedialog, messagebox
+        from scriptgen.generator import generate_script
+        filepath = filedialog.asksaveasfilename(defaultextension=".py", filetypes=[("Python Files", "*.py")])
+        if filepath:
+            try:
+                script = generate_script(self.action_editor.get_actions())
+                with open(filepath, 'w') as f:
+                    f.write(script)
+                messagebox.showinfo("Exported", f"Script exported to {filepath}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not export script: {e}") 
