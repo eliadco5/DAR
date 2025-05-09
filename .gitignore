@@ -76,3 +76,7 @@ ENV/
 # Test output
 *.log
 *.tmp
+
+# Screenshots
+screenshots/
+

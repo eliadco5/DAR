@@ -1,18 +1,78 @@
 # Converts sessions to Python scripts
 import base64
 import string
+import os
+from PIL import Image
+import shutil
 
 def pyautogui_key_name(key):
     if isinstance(key, str) and key.startswith('Key.'):
         return key[4:]
     return key
 
-def generate_script(actions, move_event_stride=5):
+def save_screenshots(actions, script_path):
+    """Save screenshots from actions to a folder next to the script"""
+    # Create screenshots directory
+    script_dir = os.path.dirname(os.path.abspath(script_path))
+    screenshots_dir = os.path.join(script_dir, 'screenshots')
+    
+    # Ensure empty screenshots directory exists
+    if os.path.exists(screenshots_dir):
+        shutil.rmtree(screenshots_dir)
+    os.makedirs(screenshots_dir)
+    
+    # Track which actions have screenshots
+    screenshot_map = {}
+    
+    # Save screenshots
+    for i, action in enumerate(actions):
+        if action['type'] == 'mouse' and action['event'] == 'down' and 'screenshot' in action and action['screenshot'] is not None:
+            screenshot_path = os.path.join(screenshots_dir, f'screenshot_{i}.png')
+            action['screenshot'].save(screenshot_path)
+            screenshot_map[i] = screenshot_path
+    
+    return screenshot_map
+
+def generate_script(actions, move_event_stride=5, output_path=None):
+    screenshot_map = {}
+    if output_path:
+        screenshot_map = save_screenshots(actions, output_path)
+    
+    # Add imports and helper functions
     lines = [
         'import pyautogui',
         'import time',
+        'import os',
+        'from PIL import Image, ImageChops, ImageStat',
         '',
         'pyautogui.FAILSAFE = True',
+        '',
+        '# Visual verification settings',
+        'TOLERANCE = 15  # Adjust as needed',
+        'VERIFICATION_ENABLED = True  # Set to False to disable visual verification',
+        '',
+        'def images_are_similar(img1, img2, tolerance=TOLERANCE):',
+        '    """Compare two images and return True if they are similar within tolerance"""',
+        '    if img1.size != img2.size:',
+        '        return False',
+        '    diff = ImageChops.difference(img1, img2)',
+        '    stat = ImageStat.Stat(diff)',
+        '    mean_diff = sum(stat.mean) / len(stat.mean)',
+        '    return mean_diff <= tolerance',
+        '',
+        'def verify_screenshot(ref_img_path, x, y, width=100, height=100):',
+        '    """Verify the current screen matches reference screenshot"""',
+        '    if not VERIFICATION_ENABLED or not os.path.exists(ref_img_path):',
+        '        return True  # Skip verification if disabled or image missing',
+        '    ref_img = Image.open(ref_img_path)',
+        '    left = max(x - width // 2, 0)',
+        '    top = max(y - height // 2, 0)',
+        '    test_img = pyautogui.screenshot(region=(left, top, width, height))',
+        '    if not images_are_similar(ref_img, test_img):',
+        '        print(f"[ERROR] Visual check failed at ({x}, {y}) - screenshot does not match.")',
+        '        if input("Continue anyway? (y/n): ").lower() != "y":',
+        '            raise Exception("Visual verification failed")',
+        '    return True',
         '',
         'time.sleep(2)  # Wait before starting',
     ]
@@ -96,16 +156,31 @@ def generate_script(actions, move_event_stride=5):
                 continue
         # Mouse click detection
         if action['type'] == 'mouse' and action['event'] == 'down':
+            # Check if we have a screenshot for this action
+            has_screenshot = i in screenshot_map
+
             if (i + 1 < len(actions)
                 and actions[i + 1]['type'] == 'mouse'
                 and actions[i + 1]['event'] == 'up'
                 and actions[i + 1]['x'] == action['x']
                 and actions[i + 1]['y'] == action['y']):
+                # Complete click (down + up)
+                if has_screenshot:
+                    screenshot_path = screenshot_map[i]
+                    rel_path = os.path.join('screenshots', os.path.basename(screenshot_path))
+                    # Add visual verification before click
+                    lines.append(f'verify_screenshot(os.path.join(os.path.dirname(__file__), {repr(rel_path)}), {action["x"]}, {action["y"]})')
                 lines.append(f'pyautogui.click({action["x"]}, {action["y"]})')
                 i += 2
                 last_time = t
                 continue
             else:
+                # Just mouse down
+                if has_screenshot:
+                    screenshot_path = screenshot_map[i]
+                    rel_path = os.path.join('screenshots', os.path.basename(screenshot_path))
+                    # Add visual verification before mouse down
+                    lines.append(f'verify_screenshot(os.path.join(os.path.dirname(__file__), {repr(rel_path)}), {action["x"]}, {action["y"]})')
                 lines.append(f'pyautogui.moveTo({action["x"]}, {action["y"]})')
                 lines.append(f'pyautogui.mouseDown()')
         elif action['type'] == 'mouse' and action['event'] == 'up':

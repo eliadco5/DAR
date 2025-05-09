@@ -15,6 +15,7 @@ from PIL import ImageQt, Image
 import threading
 from recorder.screenshot import ScreenshotUtil
 import time
+import os
 
 DARK_STYLE = """
 QWidget { background-color: #232629; color: #f0f0f0; }
@@ -362,10 +363,10 @@ class MainWindow(QMainWindow):
         filepath, _ = QFileDialog.getSaveFileName(self, "Export Script", "", "Python Files (*.py)")
         if filepath:
             try:
-                script = generate_script(self.action_editor.get_actions())
+                script = generate_script(self.action_editor.get_actions(), output_path=filepath)
                 with open(filepath, 'w') as f:
                     f.write(script)
-                QMessageBox.information(self, "Exported", f"Script exported to {filepath}")
+                QMessageBox.information(self, "Exported", f"Script exported to {filepath}\nScreenshots saved to {os.path.join(os.path.dirname(filepath), 'screenshots')}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Could not export script: {e}")
 
