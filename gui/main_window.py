@@ -46,7 +46,7 @@ class MainWindow:
         self.save_button.pack(fill=tk.X, pady=5, padx=20)
         self.load_button = ttk.Button(sidebar, text="Load", command=self.load_session, style='Sidebar.TButton')
         self.load_button.pack(fill=tk.X, pady=5, padx=20)
-        self.export_script_button = ttk.Button(sidebar, text="Export as Script", command=self.export_script, style='Sidebar.TButton')
+        self.export_script_button = ttk.Button(sidebar, text="Generate Script", command=self.export_script, style='Sidebar.TButton')
         self.export_script_button.pack(fill=tk.X, pady=5, padx=20)
 
         # Main area for action list and editing
