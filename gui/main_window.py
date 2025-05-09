@@ -31,7 +31,7 @@ class MainWindow:
         sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10), pady=0)
         sidebar.pack_propagate(False)
 
-        self.header = ttk.Label(sidebar, text="Automation Recorder", style='Header.TLabel', anchor='center')
+        self.header = ttk.Label(sidebar, text="Recorder", style='Header.TLabel', anchor='center')
         self.header.pack(pady=(30, 30), fill=tk.X)
 
         self.start_button = ttk.Button(sidebar, text="Start Recording", command=self.start_recording, style='Sidebar.TButton')
