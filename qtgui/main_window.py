@@ -233,7 +233,8 @@ class MainWindow(QMainWindow):
         self.hotkeys = HotkeyManager(
             on_pause=self.pause_recording,
             on_stop=self.stop_recording,
-            on_check=self.add_check_action
+            on_check=self.add_check_action,
+            on_resume=self.resume_recording
         )
         self.hotkeys.start()
         self._setup_shortcuts()
@@ -269,12 +270,14 @@ class MainWindow(QMainWindow):
     def start_recording(self):
         self.session_manager.start()
         self.status_label.setText("Recording...")
+        self.update_pause_resume_button(paused=False)
         self.update_action_list()
         self._poll_actions()
 
     def pause_recording(self):
         self.session_manager.pause()
         self.status_label.setText("Paused")
+        self.update_pause_resume_button(paused=True)
 
     def stop_recording(self):
         self.session_manager.stop()
@@ -650,6 +653,22 @@ class MainWindow(QMainWindow):
         self.set_controls_state(False)
         self.playback_thread = threading.Thread(target=run_test_failure, daemon=True)
         self.playback_thread.start()
+
+    def resume_recording(self):
+        self.session_manager.resume()
+        self.status_label.setText("Recording...")
+        self.update_pause_resume_button(paused=False)
+        self._poll_actions()  # Resume polling for actions
+
+    def update_pause_resume_button(self, paused=True):
+        if paused:
+            self.pause_button.setText("Resume Recording")
+            self.pause_button.clicked.disconnect()
+            self.pause_button.clicked.connect(self.resume_recording)
+        else:
+            self.pause_button.setText("Pause Recording")
+            self.pause_button.clicked.disconnect()
+            self.pause_button.clicked.connect(self.pause_recording)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

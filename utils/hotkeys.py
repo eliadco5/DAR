@@ -10,24 +10,33 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger("HotkeyManager")
 
 class HotkeyManager:
-    def __init__(self, on_pause=None, on_stop=None, on_check=None):
+    def __init__(self, on_pause=None, on_stop=None, on_check=None, on_resume=None):
         self.on_pause = on_pause
         self.on_stop = on_stop
         self.on_check = on_check
+        self.on_resume = on_resume
         self.listener = None
         self._thread = None
 
     def _on_press(self, key):
         try:
-            if key == keyboard.Key.f8 and self.on_pause:
-                logger.info("F8 hotkey detected, triggering pause")
-                self.on_pause()
-            elif key == keyboard.Key.f10 and self.on_stop:
-                logger.info("F10 hotkey detected, triggering stop")
-                self.on_stop()
-            elif key == keyboard.Key.f7 and self.on_check:
-                logger.info("F7 hotkey detected, triggering check")
-                self.on_check()
+            match key:
+                case keyboard.Key.f7:
+                    logger.info("F7 hotkey detected, triggering check")
+                    if self.on_check:
+                        self.on_check()
+                case keyboard.Key.f8:
+                    logger.info("F8 hotkey detected, triggering pause")
+                    if self.on_pause:
+                        self.on_pause()
+                case keyboard.Key.f9:
+                    logger.info("F9 hotkey detected, triggering resume")
+                    if self.on_resume:
+                        self.on_resume()
+                case keyboard.Key.f10:
+                    logger.info("F10 hotkey detected, triggering stop")
+                    if self.on_stop:
+                        self.on_stop()
         except Exception as e:
             # Log the exception instead of silently ignoring it
             logger.error(f"Error in hotkey handler: {e}")
