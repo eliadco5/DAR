@@ -8,6 +8,10 @@ A user-friendly desktop application to record and replay user interactions for a
 - Edit, save, and replay sessions
 - Export to runnable Python scripts
 
+## Limitations
+- **System/global shortcuts (e.g., ALT+TAB, WIN+R):**
+  - These may be recorded, but cannot be reliably replayed due to operating system restrictions. PyAutoGUI and similar libraries cannot trigger system-level shortcuts during playback.
+
 ## Setup
 
 1. Install dependencies:

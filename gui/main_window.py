@@ -55,6 +55,10 @@ class MainWindow:
         self.export_script_button = tk.Button(self.root, text="Export as Script", command=self.export_script)
         self.export_script_button.pack(pady=5)
 
+        # Preview button
+        self.preview_button = tk.Button(self.root, text="Preview", command=self.preview_actions)
+        self.preview_button.pack(pady=5)
+
         self.hotkeys = HotkeyManager(on_pause=self.pause_recording, on_stop=self.stop_recording)
         self.hotkeys.start()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -187,4 +191,29 @@ class MainWindow:
                     f.write(script)
                 messagebox.showinfo("Exported", f"Script exported to {filepath}")
             except Exception as e:
-                messagebox.showerror("Error", f"Could not export script: {e}") 
+                messagebox.showerror("Error", f"Could not export script: {e}")
+
+    def preview_actions(self):
+        import threading
+        from tkinter import messagebox
+        from playback.player import play_actions
+        def run_playback():
+            try:
+                self.set_controls_state(tk.DISABLED)
+                play_actions(self.action_editor.get_actions())
+            except Exception as e:
+                messagebox.showerror("Playback Error", str(e))
+            finally:
+                self.set_controls_state(tk.NORMAL)
+        threading.Thread(target=run_playback, daemon=True).start()
+
+    def set_controls_state(self, state):
+        widgets = [
+            self.start_button, self.pause_button, self.stop_button,
+            self.delete_button, self.move_up_button, self.move_down_button,
+            self.view_screenshot_button, self.save_button, self.load_button,
+            self.export_script_button, self.preview_button
+        ]
+        for w in widgets:
+            w.config(state=state)
+        self.actions_listbox.config(state=state) 
