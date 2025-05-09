@@ -98,7 +98,15 @@ class MainWindow(QMainWindow):
         self.tolerance_spin = QSpinBox()
         self.tolerance_spin.setRange(0, 100)
         self.tolerance_spin.setValue(15)
-        self.tolerance_spin.setToolTip('Set the image comparison tolerance for visual checks')
+        self.tolerance_spin.setToolTip(
+            "Visual comparison tolerance (0-100):\n\n"
+            "Controls how strict the image comparison is during visual checks.\n\n"
+            "Low values (0-5): Very strict matching. Even minor pixel differences will fail.\n"
+            "Medium values (10-30): Balanced. Small visual differences are accepted.\n"
+            "High values (50+): Permissive. Only major visual differences will fail.\n\n"
+            "Increase for dynamic UIs with small variations.\n"
+            "Decrease for precise visual validation."
+        )
         sidebar_layout.addWidget(self.tolerance_label)
         sidebar_layout.addWidget(self.tolerance_spin)
 
