@@ -387,7 +387,103 @@ class MainWindow(QMainWindow):
                 script = generate_script(self.action_editor.get_actions(), output_path=filepath)
                 with open(filepath, 'w') as f:
                     f.write(script)
-                QMessageBox.information(self, "Exported", f"Script exported to {filepath}\nScreenshots saved to {os.path.join(os.path.dirname(filepath), 'screenshots')}")
+                
+                # Create custom export confirmation dialog with better formatting
+                dialog = QDialog(self)
+                dialog.setWindowTitle("Exported")
+                dialog.setFixedSize(550, 250)
+                dialog.setStyleSheet("""
+                    QDialog { background-color: #232629; color: #f0f0f0; }
+                    QLabel { color: #f0f0f0; font-size: 14px; }
+                    QPushButton { 
+                        background-color: #323639; 
+                        color: #f0f0f0; 
+                        border: 1px solid #444; 
+                        border-radius: 6px; 
+                        padding: 8px 16px;
+                        min-width: 80px;
+                    }
+                    QPushButton:hover { background-color: #3a3f44; }
+                    QPushButton:pressed { background-color: #232629; }
+                """)
+                
+                layout = QVBoxLayout(dialog)
+                layout.setContentsMargins(20, 20, 20, 20)
+                layout.setSpacing(10)
+                
+                # Create icon and message in horizontal layout
+                info_layout = QHBoxLayout()
+                info_layout.setSpacing(15)
+                
+                # Create info icon label
+                icon_label = QLabel()
+                icon_label.setStyleSheet("font-size: 32px;")
+                icon_label.setText("ℹ️")  # Using emoji as icon
+                icon_label.setFixedSize(48, 48)
+                icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                info_layout.addWidget(icon_label)
+                
+                message_layout = QVBoxLayout()
+                message_layout.setSpacing(8)
+                
+                script_path = filepath.replace('/', '\\')
+                script_label = QLabel("Script exported to:")
+                script_label.setStyleSheet("font-weight: bold; margin-top: 5px;")
+                script_label.setWordWrap(True)
+                
+                script_label_path = QLabel(f"{script_path}")
+                script_label_path.setStyleSheet("color: #8ab4f8; font-family: monospace; margin-left: 15px;")
+                script_label_path.setWordWrap(True)
+                script_label_path.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+                
+                # Ensure proper Windows path display with backslashes
+                screenshots_path = os.path.join(os.path.dirname(filepath), 'screenshots')
+                # Replace forward slashes with backslashes for display
+                screenshots_path = screenshots_path.replace('/', '\\')
+                
+                screenshots_label = QLabel("Screenshots saved to:")
+                screenshots_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+                screenshots_label.setWordWrap(True)
+                
+                screenshots_label_path = QLabel(f"{screenshots_path}")
+                screenshots_label_path.setStyleSheet("color: #8ab4f8; font-family: monospace; margin-left: 15px;")
+                screenshots_label_path.setWordWrap(True)
+                screenshots_label_path.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+
+                message_layout.addWidget(script_label)
+                message_layout.addWidget(script_label_path)
+                message_layout.addWidget(screenshots_label)
+                message_layout.addWidget(screenshots_label_path)
+                info_layout.addLayout(message_layout, 1)
+                
+                layout.addLayout(info_layout)
+                
+                # Add OK button in its own layout for positioning
+                button_layout = QHBoxLayout()
+                button_layout.addStretch(1)
+                ok_button = QPushButton("OK")
+                ok_button.setFixedWidth(120)
+                ok_button.setFixedHeight(40)
+                ok_button.setStyleSheet("""
+                    QPushButton { 
+                        background-color: #323639; 
+                        color: #f0f0f0; 
+                        border: 1px solid #444; 
+                        border-radius: 6px; 
+                        padding: 8px 16px;
+                        font-size: 14px;
+                        font-weight: bold;
+                    }
+                    QPushButton:hover { background-color: #3a3f44; }
+                    QPushButton:pressed { background-color: #232629; }
+                """)
+                ok_button.clicked.connect(dialog.accept)
+                button_layout.addWidget(ok_button)
+                
+                layout.addLayout(button_layout)
+                layout.addSpacing(10)
+                
+                dialog.exec()
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Could not export script: {e}")
 
