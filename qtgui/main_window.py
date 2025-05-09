@@ -1,10 +1,10 @@
 import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QListWidget, QLabel, QStatusBar, QFrame, QFileDialog, QMessageBox, QSizePolicy
+    QPushButton, QListWidget, QLabel, QStatusBar, QFrame, QFileDialog, QMessageBox, QSizePolicy, QSpinBox, QDialog, QVBoxLayout, QHBoxLayout, QSplitter
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import Qt, QTimer, QMetaObject, Q_ARG, pyqtSignal, QObject
+from PyQt6.QtGui import QIcon, QPixmap
 from utils.hotkeys import HotkeyManager
 from recorder.session import SessionManager
 from gui.editor import ActionEditor
@@ -13,6 +13,8 @@ from scriptgen.generator import generate_script
 from playback.player import play_actions
 from PIL import ImageQt, Image
 import threading
+from recorder.screenshot import ScreenshotUtil
+import time
 
 DARK_STYLE = """
 QWidget { background-color: #232629; color: #f0f0f0; }
@@ -40,11 +42,21 @@ QStatusBar::item { border: none; }
 QLabel { color: #232629; }
 """
 
+# Custom signal handler for thread-safe UI updates
+class SignalHandler(QObject):
+    update_error_panel = pyqtSignal(object, object)
+    playback_finished = pyqtSignal(bool)
+    
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('Desktop Automation Recorder')
         self.setMinimumSize(1100, 700)
+
+        # Create signal handler for thread communication
+        self.signals = SignalHandler()
+        self.signals.update_error_panel.connect(self._on_update_error_panel)
+        self.signals.playback_finished.connect(self._on_playback_finished)
 
         # Sidebar
         sidebar = QFrame()
@@ -75,18 +87,28 @@ class MainWindow(QMainWindow):
         self.load_button.clicked.connect(self.load_session)
         self.export_script_button = QPushButton('Generate Script')
         self.export_script_button.clicked.connect(self.export_script)
-        for btn in [self.start_button, self.pause_button, self.stop_button, self.preview_button, self.save_button, self.load_button, self.export_script_button]:
+        self.check_button = QPushButton('Check')
+        self.check_button.clicked.connect(self.add_check_action)
+        for btn in [self.start_button, self.pause_button, self.stop_button, self.preview_button, self.save_button, self.load_button, self.export_script_button, self.check_button]:
             btn.setMinimumHeight(40)
             sidebar_layout.addWidget(btn)
 
-        # Main area
-        main_area = QWidget()
-        main_layout = QVBoxLayout()
-        main_area.setLayout(main_layout)
+        self.tolerance_label = QLabel('Tolerance:')
+        self.tolerance_spin = QSpinBox()
+        self.tolerance_spin.setRange(0, 100)
+        self.tolerance_spin.setValue(15)
+        self.tolerance_spin.setToolTip('Set the image comparison tolerance for visual checks')
+        sidebar_layout.addWidget(self.tolerance_label)
+        sidebar_layout.addWidget(self.tolerance_spin)
 
-        main_layout.addWidget(QLabel('Recorded Actions'))
+        # Left side - operations panel
+        operations_panel = QWidget()
+        operations_layout = QVBoxLayout()
+        operations_panel.setLayout(operations_layout)
+
+        operations_layout.addWidget(QLabel('Recorded Actions'))
         self.action_list = QListWidget()
-        main_layout.addWidget(self.action_list)
+        operations_layout.addWidget(self.action_list)
 
         # Edit controls
         edit_controls = QHBoxLayout()
@@ -101,15 +123,71 @@ class MainWindow(QMainWindow):
         for btn in [self.delete_button, self.move_up_button, self.move_down_button, self.view_screenshot_button]:
             btn.setMinimumHeight(32)
             edit_controls.addWidget(btn)
-        main_layout.addLayout(edit_controls)
+        operations_layout.addLayout(edit_controls)
 
-        # Layout
-        central = QWidget()
-        layout = QHBoxLayout()
-        layout.addWidget(sidebar)
-        layout.addWidget(main_area, 1)
-        central.setLayout(layout)
-        self.setCentralWidget(central)
+        # Right side - error panel
+        self.error_panel = QWidget()
+        error_layout = QVBoxLayout()
+        self.error_panel.setLayout(error_layout)
+        
+        self.error_header = QLabel('Visual Check Result')
+        self.error_header.setObjectName('Header')
+        self.error_header.setStyleSheet("font-size: 18px; font-weight: bold;")
+        error_layout.addWidget(self.error_header)
+        
+        self.error_status = QLabel('')
+        error_layout.addWidget(self.error_status)
+        
+        # Image comparison layout
+        image_layout = QHBoxLayout()
+        
+        # Reference image
+        ref_container = QVBoxLayout()
+        self.ref_label = QLabel('Reference Image')
+        self.ref_image = QLabel()
+        self.ref_image.setMinimumSize(300, 300)
+        self.ref_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.ref_image.setStyleSheet("border: 1px solid #444;")
+        ref_container.addWidget(self.ref_label)
+        ref_container.addWidget(self.ref_image)
+        image_layout.addLayout(ref_container)
+        
+        # Test image
+        test_container = QVBoxLayout()
+        self.test_label = QLabel('Current Image')
+        self.test_image = QLabel()
+        self.test_image.setMinimumSize(300, 300)
+        self.test_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.test_image.setStyleSheet("border: 1px solid #444;")
+        test_container.addWidget(self.test_label)
+        test_container.addWidget(self.test_image)
+        image_layout.addLayout(test_container)
+        
+        error_layout.addLayout(image_layout)
+        
+        # Add continue/ignore button
+        self.continue_button = QPushButton('Continue Anyway')
+        self.continue_button.clicked.connect(self.continue_after_error)
+        self.continue_button.setMinimumHeight(40)
+        error_layout.addWidget(self.continue_button)
+        
+        # Hide error panel initially
+        self.error_panel.hide()
+
+        # Main layout with splitter
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        left_widget = QWidget()
+        left_layout = QHBoxLayout()
+        left_layout.addWidget(sidebar)
+        left_layout.addWidget(operations_panel)
+        left_widget.setLayout(left_layout)
+        
+        splitter.addWidget(left_widget)
+        splitter.addWidget(self.error_panel)
+        splitter.setSizes([700, 400])  # Initial sizes
+        
+        # Set as central widget
+        self.setCentralWidget(splitter)
 
         # Status bar
         self.status = QStatusBar()
@@ -145,6 +223,11 @@ class MainWindow(QMainWindow):
 
         # Apply dark mode stylesheet by default
         self.setStyleSheet(DARK_STYLE)
+
+        self.failed_check_images = None  # (ref_img, test_img)
+        self.continue_after_fail = False
+        self.playback_thread = None
+        self.check_event = threading.Event()  # For thread synchronization
 
     def _setup_shortcuts(self):
         # Add keyboard shortcuts for delete, move up, move down
@@ -191,16 +274,19 @@ class MainWindow(QMainWindow):
         self.action_editor.set_actions(actions)
         self.action_list.clear()
         for i, action in enumerate(self.action_editor.get_actions()):
-            desc = f"{i+1}. {action['type']} "
-            if action['type'] == 'mouse':
-                if action['event'] == 'down':
-                    desc += f"click at ({action['x']}, {action['y']})"
-                elif action['event'] == 'up':
-                    desc += f"release at ({action['x']}, {action['y']})"
-                else:
-                    desc += f"{action['event']} at ({action['x']}, {action['y']})"
-            elif action['type'] == 'keyboard':
-                desc += f"{action['event']} key {action.get('key', '')}"
+            if action['type'] == 'check':
+                desc = f"{i+1}. Check: image present"
+            else:
+                desc = f"{i+1}. {action['type']} "
+                if action['type'] == 'mouse':
+                    if action['event'] == 'down':
+                        desc += f"click at ({action['x']}, {action['y']})"
+                    elif action['event'] == 'up':
+                        desc += f"release at ({action['x']}, {action['y']})"
+                    else:
+                        desc += f"{action['event']} at ({action['x']}, {action['y']})"
+                elif action['type'] == 'keyboard':
+                    desc += f"{action['event']} key {action.get('key', '')}"
             self.action_list.addItem(desc)
         self.action_list.scrollToBottom()
 
@@ -286,23 +372,63 @@ class MainWindow(QMainWindow):
     def preview_actions(self):
         def run_playback():
             try:
-                self.set_controls_state(False)
-                play_actions(self.action_editor.get_actions())
+                result = True
+                fail_info = None
+                
+                # Setup for playback
+                self.signals.update_error_panel.emit(None, None)  # Clear error panel
+                self.check_event.clear()  # Reset event
+                self.continue_after_fail = False
+                
+                # Run playback with the configured tolerance
+                tolerance = self.tolerance_spin.value()
+                result, fail_info = play_actions(
+                    self.action_editor.get_actions(), 
+                    tolerance=tolerance, 
+                    fail_callback=self.on_visual_check_failed
+                )
+                
+                # If playback failed due to visual check
+                if not result and fail_info:
+                    # Wait for user to decide whether to continue
+                    self.check_event.wait()  # Wait until user makes a decision
+                    
+                    # If user chose to continue, restart playback
+                    if self.continue_after_fail:
+                        # Continue playback from where it left off
+                        # This would require modifying play_actions to accept a start index
+                        # For now, we just signal playback is done
+                        pass
             except Exception as e:
-                QMessageBox.critical(self, "Playback Error", str(e))
+                print(f"Playback error: {e}")
+                result = False
             finally:
-                self.set_controls_state(True)
-        threading.Thread(target=run_playback, daemon=True).start()
+                # Signal that playback is finished
+                self.signals.playback_finished.emit(result)
+            
+        # Clean up any existing thread
+        if self.playback_thread and self.playback_thread.is_alive():
+            self.check_event.set()  # Just in case it's waiting
+            self.playback_thread.join(0.5)  # Wait a bit for it to end
+        
+        # Start new playback thread
+        self.set_controls_state(False)
+        self.playback_thread = threading.Thread(target=run_playback, daemon=True)
+        self.playback_thread.start()
 
     def set_controls_state(self, enabled):
         for btn in [self.start_button, self.pause_button, self.stop_button, self.delete_button,
                     self.move_up_button, self.move_down_button, self.view_screenshot_button,
-                    self.save_button, self.load_button, self.export_script_button, self.preview_button]:
+                    self.save_button, self.load_button, self.export_script_button, self.preview_button, self.check_button]:
             btn.setEnabled(enabled)
         self.action_list.setEnabled(enabled)
 
     def closeEvent(self, event):
+        # Clean up threads before closing
         self.hotkeys.stop()
+        if self.playback_thread and self.playback_thread.is_alive():
+            self.check_event.set()  # Release any waiting thread
+            self.playback_thread.join(0.5)  # Wait a bit for it to end
         event.accept()
 
     def toggle_theme(self):
@@ -325,6 +451,71 @@ class MainWindow(QMainWindow):
             self.header.setStyleSheet("color: #f0f0f0; font-size: 22px; font-weight: bold;")
         self.is_dark = not self.is_dark
         QTimer.singleShot(200, lambda: self.toggle_theme_button.setEnabled(True))
+
+    def add_check_action(self):
+        # For now, just capture the whole screen as the check image
+        img = ScreenshotUtil.capture_fullscreen()
+        action = {
+            'type': 'check',
+            'check_type': 'image',
+            'image': img,
+            'region': None  # In the future, let user select region
+        }
+        actions = self.action_editor.get_actions()
+        actions.append(action)
+        self.action_editor.set_actions(actions)
+        self.session_manager.listener.events = self.action_editor.get_actions()
+        self.update_action_list()
+
+    def on_visual_check_failed(self, ref_img, test_img):
+        """Called from background thread when a visual check fails"""
+        self.failed_check_images = (ref_img, test_img)
+        # Emit signal to update UI in main thread
+        self.signals.update_error_panel.emit(ref_img, test_img)
+        
+    def _on_update_error_panel(self, ref_img, test_img):
+        """Slot connected to update_error_panel signal (runs in main thread)"""
+        if ref_img is None or test_img is None:
+            # Hide the panel if null images
+            self.error_panel.hide()
+            return
+            
+        # Convert PIL images to QPixmap for display
+        ref_qimg = ImageQt.ImageQt(ref_img)
+        test_qimg = ImageQt.ImageQt(test_img)
+        
+        ref_pixmap = QPixmap.fromImage(ref_qimg)
+        test_pixmap = QPixmap.fromImage(test_qimg)
+        
+        # Scale pixmaps to fit in the labels while maintaining aspect ratio
+        ref_pixmap = ref_pixmap.scaled(300, 300, Qt.AspectRatioMode.KeepAspectRatio)
+        test_pixmap = test_pixmap.scaled(300, 300, Qt.AspectRatioMode.KeepAspectRatio)
+        
+        # Update the labels
+        self.ref_image.setPixmap(ref_pixmap)
+        self.test_image.setPixmap(test_pixmap)
+        
+        # Update status text
+        self.error_status.setText("Visual check failed! The screen doesn't match what was expected.")
+        self.error_status.setStyleSheet("color: #FF4444; font-weight: bold;")
+        
+        # Show the error panel
+        self.error_panel.show()
+    
+    def _on_playback_finished(self, success):
+        """Slot connected to playback_finished signal (runs in main thread)"""
+        self.set_controls_state(True)
+        # Update status based on playback result
+        if success:
+            self.status_label.setText("Playback completed successfully")
+        else:
+            self.status_label.setText("Playback completed with errors")
+    
+    def continue_after_error(self):
+        """User clicked Continue button after an error"""
+        self.continue_after_fail = True
+        self.error_panel.hide()
+        self.check_event.set()  # Signal the waiting thread to continue
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

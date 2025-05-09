@@ -1,8 +1,10 @@
 # Replays actions with timing and error handling
 import pyautogui
 import time
+from utils.image_compare import images_are_similar
+from recorder.screenshot import ScreenshotUtil
 
-def play_actions(actions, move_event_stride=5):
+def play_actions(actions, move_event_stride=5, tolerance=15, fail_callback=None):
     last_time = 0
     move_count = 0
     for i, action in enumerate(actions):
@@ -23,6 +25,16 @@ def play_actions(actions, move_event_stride=5):
                 if action['event'] == 'move':
                     pyautogui.moveTo(action['x'], action['y'])
                 elif action['event'] == 'down':
+                    # Visual assertion: compare screenshot if present
+                    if 'screenshot' in action and action['screenshot'] is not None:
+                        x, y = action['x'], action['y']
+                        ref_img = action['screenshot']
+                        test_img = ScreenshotUtil.capture_region(x, y, ref_img.width, ref_img.height)
+                        if not images_are_similar(ref_img, test_img, tolerance=tolerance):
+                            print(f"[ERROR] Visual check failed at click ({x}, {y}) - screenshot does not match.")
+                            if fail_callback:
+                                fail_callback(ref_img, test_img)
+                            return False, (ref_img, test_img)
                     pyautogui.moveTo(action['x'], action['y'])
                     pyautogui.mouseDown()
                 elif action['event'] == 'up':
@@ -38,7 +50,9 @@ def play_actions(actions, move_event_stride=5):
                     pyautogui.keyUp(key)
         except Exception as e:
             print(f"Playback error at action {i}: {e}")
+            return False, None
         last_time = t
+    return True, None
 
 class Player:
     def __init__(self):
