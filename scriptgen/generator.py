@@ -30,6 +30,10 @@ def save_screenshots(actions, script_path):
             screenshot_path = os.path.join(screenshots_dir, f'screenshot_{i}.png')
             action['screenshot'].save(screenshot_path)
             screenshot_map[i] = screenshot_path
+        elif action['type'] == 'check' and action['check_type'] == 'image' and 'image' in action and action['image'] is not None:
+            screenshot_path = os.path.join(screenshots_dir, f'check_{i}.png')
+            action['image'].save(screenshot_path)
+            screenshot_map[i] = screenshot_path
     
     return screenshot_map
 
@@ -70,6 +74,35 @@ def generate_script(actions, move_event_stride=5, output_path=None):
         '    test_img = pyautogui.screenshot(region=(left, top, width, height))',
         '    if not images_are_similar(ref_img, test_img):',
         '        print(f"[ERROR] Visual check failed at ({x}, {y}) - screenshot does not match.")',
+        '        if input("Continue anyway? (y/n): ").lower() != "y":',
+        '            raise Exception("Visual verification failed")',
+        '    return True',
+        '',
+        'def verify_window_screenshot(ref_img_path):',
+        '    """Verify the current active window matches reference screenshot"""',
+        '    if not VERIFICATION_ENABLED or not os.path.exists(ref_img_path):',
+        '        return True  # Skip verification if disabled or image missing',
+        '    ref_img = Image.open(ref_img_path)',
+        '    ',
+        '    # Capture active window',
+        '    try:',
+        '        import ctypes',
+        '        hwnd = ctypes.windll.user32.GetForegroundWindow()',
+        '        rect = ctypes.wintypes.RECT()',
+        '        ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))',
+        '        width = rect.right - rect.left',
+        '        height = rect.bottom - rect.top',
+        '        test_img = pyautogui.screenshot(region=(rect.left, rect.top, width, height))',
+        '    except Exception:',
+        '        # Fallback to full screen',
+        '        test_img = pyautogui.screenshot()',
+        '    ',
+        '    # Resize test image to match reference if needed',
+        '    if test_img.size != ref_img.size:',
+        '        test_img = test_img.resize(ref_img.size)',
+        '    ',
+        '    if not images_are_similar(ref_img, test_img):',
+        '        print(f"[ERROR] Window visual check failed - screenshot does not match.")',
         '        if input("Continue anyway? (y/n): ").lower() != "y":',
         '            raise Exception("Visual verification failed")',
         '    return True',
@@ -190,6 +223,15 @@ def generate_script(actions, move_event_stride=5, output_path=None):
             lines.append(f'pyautogui.moveTo({action["x"]}, {action["y"]})')
         elif action['type'] == 'mouse' and action['event'] == 'scroll':
             lines.append(f'pyautogui.scroll({action["dy"]}, x={action["x"]}, y={action["y"]})')
+        # Handle manual check actions
+        elif action['type'] == 'check' and action['check_type'] == 'image':
+            if i in screenshot_map:
+                screenshot_path = screenshot_map[i]
+                rel_path = os.path.join('screenshots', os.path.basename(screenshot_path))
+                # Add visual verification for the check point
+                lines.append(f'print("Performing manual visual check...")')
+                lines.append(f'verify_window_screenshot(os.path.join(os.path.dirname(__file__), {repr(rel_path)}))')
+                lines.append(f'print("Visual check passed!")')
         last_time = t
         i += 1
     # Release any modifiers still held at the end

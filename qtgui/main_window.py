@@ -47,6 +47,7 @@ QLabel { color: #232629; }
 class SignalHandler(QObject):
     update_error_panel = pyqtSignal(object, object)
     playback_finished = pyqtSignal(bool)
+    add_check = pyqtSignal()  # New signal for adding check points
     
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -58,6 +59,7 @@ class MainWindow(QMainWindow):
         self.signals = SignalHandler()
         self.signals.update_error_panel.connect(self._on_update_error_panel)
         self.signals.playback_finished.connect(self._on_playback_finished)
+        self.signals.add_check.connect(self._execute_add_check)  # Connect new signal
 
         # Sidebar
         sidebar = QFrame()
@@ -226,7 +228,11 @@ class MainWindow(QMainWindow):
         self.session_manager = SessionManager()
 
         # Hotkey manager
-        self.hotkeys = HotkeyManager(on_pause=self.pause_recording, on_stop=self.stop_recording)
+        self.hotkeys = HotkeyManager(
+            on_pause=self.pause_recording,
+            on_stop=self.stop_recording,
+            on_check=self.add_check_action
+        )
         self.hotkeys.start()
         self._setup_shortcuts()
 
@@ -462,19 +468,32 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(200, lambda: self.toggle_theme_button.setEnabled(True))
 
     def add_check_action(self):
-        # For now, just capture the whole screen as the check image
-        img = ScreenshotUtil.capture_fullscreen()
+        """Called from the hotkey thread when F7 is pressed"""
+        # Use signal to execute in the main thread
+        self.signals.add_check.emit()
+        
+    def _execute_add_check(self):
+        """Executes in the main thread via signal/slot mechanism"""
+        # Capture the active window
+        img = ScreenshotUtil.capture_active_window()
         action = {
             'type': 'check',
             'check_type': 'image',
             'image': img,
-            'region': None  # In the future, let user select region
+            'timestamp': time.time() - (self.session_manager.listener.start_time or time.time()),
+            'region': None
         }
         actions = self.action_editor.get_actions()
         actions.append(action)
         self.action_editor.set_actions(actions)
         self.session_manager.listener.events = self.action_editor.get_actions()
         self.update_action_list()
+        
+        # Show confirmation in status bar
+        self.status_label.setText("Visual check point added")
+        QTimer.singleShot(3000, lambda: self.status_label.setText(
+            "Recording..." if self.session_manager.state == 'recording' else 
+            "Paused" if self.session_manager.state == 'paused' else "Stopped"))
 
     def on_visual_check_failed(self, ref_img, test_img):
         """Called from background thread when a visual check fails"""

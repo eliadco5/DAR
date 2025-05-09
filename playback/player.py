@@ -48,6 +48,27 @@ def play_actions(actions, move_event_stride=5, tolerance=15, fail_callback=None)
                     pyautogui.keyDown(key)
                 elif action['event'] == 'up':
                     pyautogui.keyUp(key)
+            elif action['type'] == 'check' and action['check_type'] == 'image':
+                # Handle manual check actions
+                if 'image' in action and action['image'] is not None:
+                    ref_img = action['image']
+                    # For manual checks, we need to capture the same region as the reference image
+                    if action['region'] is not None:
+                        # If region is specified, use it
+                        x, y, w, h = action['region']
+                        test_img = ScreenshotUtil.capture_region(x, y, w, h)
+                    else:
+                        # Otherwise capture the active window as we did during recording
+                        test_img = ScreenshotUtil.capture_active_window()
+                        # Resize test image to match reference image dimensions
+                        if test_img.size != ref_img.size:
+                            test_img = test_img.resize(ref_img.size)
+                    
+                    if not images_are_similar(ref_img, test_img, tolerance=tolerance):
+                        print(f"[ERROR] Manual visual check failed - screenshot does not match.")
+                        if fail_callback:
+                            fail_callback(ref_img, test_img)
+                        return False, (ref_img, test_img)
         except Exception as e:
             print(f"Playback error at action {i}: {e}")
             return False, None
