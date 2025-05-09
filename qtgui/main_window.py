@@ -11,7 +11,7 @@ from gui.editor import ActionEditor
 from storage.save_load import save_actions, load_actions
 from scriptgen.generator import generate_script
 from playback.player import play_actions
-from PIL import ImageQt, Image
+from PIL import ImageQt, Image, ImageChops, ImageStat
 import threading
 from recorder.screenshot import ScreenshotUtil
 import time
@@ -92,7 +92,9 @@ class MainWindow(QMainWindow):
         self.export_script_button.clicked.connect(self.export_script)
         self.check_button = QPushButton('Check')
         self.check_button.clicked.connect(self.add_check_action)
-        for btn in [self.start_button, self.pause_button, self.stop_button, self.preview_button, self.save_button, self.load_button, self.export_script_button, self.check_button]:
+        self.test_check_button = QPushButton('Test Check Failure')
+        self.test_check_button.clicked.connect(self.test_check_failure)
+        for btn in [self.start_button, self.pause_button, self.stop_button, self.preview_button, self.save_button, self.load_button, self.export_script_button, self.check_button, self.test_check_button]:
             btn.setMinimumHeight(40)
             sidebar_layout.addWidget(btn)
 
@@ -290,7 +292,9 @@ class MainWindow(QMainWindow):
         self.action_list.clear()
         for i, action in enumerate(self.action_editor.get_actions()):
             if action['type'] == 'check':
-                desc = f"{i+1}. Check: image present"
+                img = action.get('image')
+                size_info = f" ({img.width}x{img.height})" if img else ""
+                desc = f"{i+1}. Check: Window visual verification{size_info}"
             else:
                 desc = f"{i+1}. {action['type']} "
                 if action['type'] == 'mouse':
@@ -434,7 +438,8 @@ class MainWindow(QMainWindow):
     def set_controls_state(self, enabled):
         for btn in [self.start_button, self.pause_button, self.stop_button, self.delete_button,
                     self.move_up_button, self.move_down_button, self.view_screenshot_button,
-                    self.save_button, self.load_button, self.export_script_button, self.preview_button, self.check_button]:
+                    self.save_button, self.load_button, self.export_script_button, self.preview_button, 
+                    self.check_button, self.test_check_button]:
             btn.setEnabled(enabled)
         self.action_list.setEnabled(enabled)
 
@@ -489,8 +494,12 @@ class MainWindow(QMainWindow):
         self.session_manager.listener.events = self.action_editor.get_actions()
         self.update_action_list()
         
-        # Show confirmation in status bar
-        self.status_label.setText("Visual check point added")
+        # Show confirmation in status bar with more detail
+        self.status_label.setText(f"Visual check point added - Window size: {img.width}x{img.height}")
+        # Also play a sound or show color flash to make feedback more noticeable
+        self.error_status.setText("Visual check point added")
+        self.error_status.setStyleSheet("color: #44AA44; font-weight: bold;")
+        QTimer.singleShot(500, lambda: self.error_status.setText(""))
         QTimer.singleShot(3000, lambda: self.status_label.setText(
             "Recording..." if self.session_manager.state == 'recording' else 
             "Paused" if self.session_manager.state == 'paused' else "Stopped"))
@@ -523,8 +532,21 @@ class MainWindow(QMainWindow):
         self.ref_image.setPixmap(ref_pixmap)
         self.test_image.setPixmap(test_pixmap)
         
-        # Update status text
-        self.error_status.setText("Visual check failed! The screen doesn't match what was expected.")
+        # Update status text with more details
+        from utils.image_compare import images_are_similar
+        mean_diff = 0
+        try:
+            # Calculate difference for display
+            diff = ImageChops.difference(ref_img, test_img)
+            stat = ImageStat.Stat(diff)
+            mean_diff = sum(stat.mean) / len(stat.mean)
+        except Exception:
+            pass
+            
+        self.error_status.setText(
+            f"Visual check failed! Images differ by {mean_diff:.2f} units (tolerance: {self.tolerance_spin.value()}).\n"
+            f"The current screen doesn't match what was expected."
+        )
         self.error_status.setStyleSheet("color: #FF4444; font-weight: bold;")
         
         # Show the error panel
@@ -544,6 +566,90 @@ class MainWindow(QMainWindow):
         self.continue_after_fail = True
         self.error_panel.hide()
         self.check_event.set()  # Signal the waiting thread to continue
+
+    def test_check_failure(self):
+        """Force a check failure to test the mechanism works properly"""
+        # First check if there are any check actions
+        has_check = False
+        for action in self.action_editor.get_actions():
+            if action['type'] == 'check' and action['check_type'] == 'image':
+                has_check = True
+                break
+                
+        if not has_check:
+            # No check actions found, inform the user
+            QMessageBox.information(
+                self, 
+                "No Check Actions", 
+                "No visual check actions found. Add a check first using the 'Check' button or F7 key."
+            )
+            return
+            
+        # Prompt for confirmation
+        response = QMessageBox.question(
+            self,
+            "Test Check Failure",
+            "This will play back your actions with visual checks forced to fail.\n\n"
+            "Use this to verify that your error handling works correctly.\n\n"
+            "Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if response == QMessageBox.StandardButton.No:
+            return
+            
+        # Run playback with forced failure for checks
+        def run_test_failure():
+            try:
+                result = True
+                fail_info = None
+                
+                # Setup for playback
+                self.signals.update_error_panel.emit(None, None)  # Clear error panel
+                self.check_event.clear()  # Reset event
+                self.continue_after_fail = False
+                
+                # Get all actions
+                actions = self.action_editor.get_actions()
+                
+                # Create a modified copy of the actions for testing
+                test_actions = []
+                for action in actions:
+                    action_copy = action.copy()
+                    if action_copy['type'] == 'check' and action_copy['check_type'] == 'image':
+                        # Add force_fail flag to check actions
+                        action_copy['force_fail'] = True
+                    test_actions.append(action_copy)
+                
+                # Run playback with the configured tolerance and test actions
+                tolerance = self.tolerance_spin.value()
+                result, fail_info = play_actions(
+                    test_actions, 
+                    tolerance=tolerance, 
+                    fail_callback=self.on_visual_check_failed
+                )
+                
+                # If playback failed due to visual check (which it should)
+                if not result and fail_info:
+                    # Wait for user to decide whether to continue
+                    self.check_event.wait()  # Wait until user makes a decision
+            except Exception as e:
+                print(f"Test failure playback error: {e}")
+                result = False
+            finally:
+                # Signal that playback is finished
+                self.signals.playback_finished.emit(result)
+        
+        # Clean up any existing thread
+        if self.playback_thread and self.playback_thread.is_alive():
+            self.check_event.set()  # Just in case it's waiting
+            self.playback_thread.join(0.5)  # Wait a bit for it to end
+        
+        # Start new playback thread
+        self.set_controls_state(False)
+        self.playback_thread = threading.Thread(target=run_test_failure, daemon=True)
+        self.playback_thread.start()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

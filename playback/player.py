@@ -3,11 +3,29 @@ import pyautogui
 import time
 from utils.image_compare import images_are_similar
 from recorder.screenshot import ScreenshotUtil
+import logging
+from PIL import Image, ImageChops, ImageStat
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("Player")
 
 def play_actions(actions, move_event_stride=5, tolerance=15, fail_callback=None):
     last_time = 0
     move_count = 0
     for i, action in enumerate(actions):
+        # Log action type for debugging
+        action_type = action.get('type', 'unknown')
+        if action_type == 'mouse':
+            event_type = action.get('event', 'unknown')
+            logger.info(f"Playing action {i+1}/{len(actions)}: {action_type} {event_type}")
+        elif action_type == 'check':
+            logger.info(f"Playing action {i+1}/{len(actions)}: VISUAL CHECK")
+            print(f"\n[VISUAL CHECK] Verifying the active window matches recorded screenshot...")
+        else:
+            logger.info(f"Playing action {i+1}/{len(actions)}: {action_type}")
+            
         t = action.get('timestamp', 0)
         wait = t - last_time if t > last_time else 0
         if action['type'] == 'mouse' and action['event'] == 'move':
@@ -32,6 +50,7 @@ def play_actions(actions, move_event_stride=5, tolerance=15, fail_callback=None)
                         test_img = ScreenshotUtil.capture_region(x, y, ref_img.width, ref_img.height)
                         if not images_are_similar(ref_img, test_img, tolerance=tolerance):
                             print(f"[ERROR] Visual check failed at click ({x}, {y}) - screenshot does not match.")
+                            logger.error(f"Visual check failed at mouse click ({x}, {y})")
                             if fail_callback:
                                 fail_callback(ref_img, test_img)
                             return False, (ref_img, test_img)
@@ -49,7 +68,7 @@ def play_actions(actions, move_event_stride=5, tolerance=15, fail_callback=None)
                 elif action['event'] == 'up':
                     pyautogui.keyUp(key)
             elif action['type'] == 'check' and action['check_type'] == 'image':
-                # Handle manual check actions
+                # Handle manual check actions (F7 hotkey)
                 if 'image' in action and action['image'] is not None:
                     ref_img = action['image']
                     # For manual checks, we need to capture the same region as the reference image
@@ -60,19 +79,52 @@ def play_actions(actions, move_event_stride=5, tolerance=15, fail_callback=None)
                     else:
                         # Otherwise capture the active window as we did during recording
                         test_img = ScreenshotUtil.capture_active_window()
+                        
+                        # Debug window sizes
+                        logger.info(f"Reference image size: {ref_img.size}, Test image size: {test_img.size}")
+                        
                         # Resize test image to match reference image dimensions
                         if test_img.size != ref_img.size:
+                            logger.info(f"Resizing test image from {test_img.size} to {ref_img.size}")
                             test_img = test_img.resize(ref_img.size)
                     
-                    if not images_are_similar(ref_img, test_img, tolerance=tolerance):
-                        print(f"[ERROR] Manual visual check failed - screenshot does not match.")
+                    # Calculate difference manually for additional verification
+                    diff = ImageChops.difference(ref_img, test_img)
+                    stat = ImageStat.Stat(diff)
+                    mean_diff = sum(stat.mean) / len(stat.mean)
+                    
+                    # Check if test is forced to fail (for testing purposes)
+                    force_fail = action.get('force_fail', False)
+                    if force_fail:
+                        logger.warning("Force fail flag detected in check action - forcing failure for testing")
+                        print(f"[WARNING] Test mode: Forcing visual check to fail for testing purposes.")
+                    
+                    # Compare images with tolerance
+                    result = images_are_similar(ref_img, test_img, tolerance=tolerance, force_fail=force_fail)
+                    
+                    # Log result with detailed metrics
+                    logger.info(f"Visual check comparison: difference={mean_diff:.2f}, tolerance={tolerance}, passed={result}")
+                    
+                    if result:
+                        print(f"[SUCCESS] Visual check passed! Window appears as expected.")
+                        print(f"[INFO] Image difference: {mean_diff:.2f}, Tolerance: {tolerance}")
+                        logger.info(f"Visual check passed")
+                    else:
+                        print(f"[ERROR] Visual check FAILED - Window appearance has changed.")
+                        print(f"[ERROR] Image difference: {mean_diff:.2f}, Tolerance: {tolerance}")
+                        print(f"[ERROR] Difference exceeds acceptable threshold.")
+                        logger.error(f"Visual check failed: difference={mean_diff:.2f}, tolerance={tolerance}")
                         if fail_callback:
                             fail_callback(ref_img, test_img)
                         return False, (ref_img, test_img)
+                else:
+                    logger.warning(f"Check action at index {i} has no image data")
         except Exception as e:
             print(f"Playback error at action {i}: {e}")
+            logger.exception(f"Playback error at action {i}")
             return False, None
         last_time = t
+    logger.info("Playback completed successfully")
     return True, None
 
 class Player:
