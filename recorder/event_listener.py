@@ -1,6 +1,7 @@
 # Hooks for mouse/keyboard events
 from pynput import mouse, keyboard
 import time
+from recorder.screenshot import ScreenshotUtil
 
 class EventListener:
     def __init__(self):
@@ -14,14 +15,18 @@ class EventListener:
         if not self.recording:
             return
         timestamp = time.time() - self.start_time
-        self.events.append({
+        event = {
             'type': 'mouse',
             'event': event_type,
             'x': x,
             'y': y,
             'button': str(button) if button else None,
             'timestamp': timestamp
-        })
+        }
+        # Capture screenshot only for mouse down events
+        if event_type == 'down':
+            event['screenshot'] = ScreenshotUtil.capture_region(x, y)
+        self.events.append(event)
 
     def _on_click(self, x, y, button, pressed):
         event_type = 'down' if pressed else 'up'
