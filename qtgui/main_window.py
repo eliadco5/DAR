@@ -1,7 +1,7 @@
 import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QListWidget, QLabel, QStatusBar, QFrame, QFileDialog, QMessageBox, QSizePolicy, QSpinBox, QDialog, QVBoxLayout, QHBoxLayout, QSplitter, QComboBox, QInputDialog, QLineEdit
+    QPushButton, QListWidget, QLabel, QStatusBar, QFrame, QFileDialog, QMessageBox, QSizePolicy, QSpinBox, QDialog, QVBoxLayout, QHBoxLayout, QSplitter, QComboBox
 )
 from PyQt6.QtCore import Qt, QTimer, QMetaObject, Q_ARG, pyqtSignal, QObject
 from PyQt6.QtGui import QIcon, QPixmap
@@ -296,11 +296,7 @@ class MainWindow(QMainWindow):
             if action['type'] == 'check':
                 img = action.get('image')
                 size_info = f" ({img.width}x{img.height})" if img else ""
-                check_name = action.get('check_name', '')
-                if check_name:
-                    desc = f"{i+1}. Check: '{check_name}'{size_info}"
-                else:
-                    desc = f"{i+1}. Check: Window visual verification{size_info}"
+                desc = f"{i+1}. Check: Window visual verification{size_info}"
             else:
                 desc = f"{i+1}. {action['type']} "
                 if action['type'] == 'mouse':
@@ -598,31 +594,6 @@ class MainWindow(QMainWindow):
         
     def _execute_add_check(self):
         """Executes in the main thread via signal/slot mechanism"""
-        # Pause recording temporarily while showing the dialog
-        was_recording = self.session_manager.state == 'recording'
-        if was_recording:
-            self.session_manager.pause()
-        
-        # Show dialog to get check name
-        check_name, ok = QInputDialog.getText(
-            self,
-            "Name Your Visual Check",
-            "Enter a descriptive name for this visual check point:",
-            QLineEdit.EchoMode.Normal,
-            f"Check_{len(self.action_editor.get_actions()) + 1}"
-        )
-        
-        if not ok:
-            # User canceled, resume recording if it was active
-            if was_recording:
-                self.session_manager.resume()
-                self.status_label.setText("Recording...")
-            return
-        
-        # Default name if user provided empty string
-        if not check_name.strip():
-            check_name = f"Check_{len(self.action_editor.get_actions()) + 1}"
-            
         # Capture the active window
         img = ScreenshotUtil.capture_active_window()
         action = {
@@ -630,8 +601,7 @@ class MainWindow(QMainWindow):
             'check_type': 'image',
             'image': img,
             'timestamp': time.time() - (self.session_manager.listener.start_time or time.time()),
-            'region': None,
-            'check_name': check_name  # Store the user-provided name
+            'region': None
         }
         actions = self.action_editor.get_actions()
         actions.append(action)
@@ -640,19 +610,14 @@ class MainWindow(QMainWindow):
         self.update_action_list()
         
         # Show confirmation in status bar with more detail
-        self.status_label.setText(f"Visual check '{check_name}' added - Window size: {img.width}x{img.height}")
+        self.status_label.setText(f"Visual check point added - Window size: {img.width}x{img.height}")
         # Also play a sound or show color flash to make feedback more noticeable
-        self.error_status.setText(f"Visual check '{check_name}' added")
+        self.error_status.setText("Visual check point added")
         self.error_status.setStyleSheet("color: #44AA44; font-weight: bold;")
         QTimer.singleShot(500, lambda: self.error_status.setText(""))
         QTimer.singleShot(3000, lambda: self.status_label.setText(
             "Recording..." if self.session_manager.state == 'recording' else 
             "Paused" if self.session_manager.state == 'paused' else "Stopped"))
-        
-        # Resume recording if it was active
-        if was_recording:
-            self.session_manager.resume()
-            self.status_label.setText("Recording...")
 
     def on_visual_check_failed(self, ref_img, test_img):
         """Called from background thread when a visual check fails"""

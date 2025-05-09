@@ -80,3 +80,18 @@ ENV/
 # Screenshots
 screenshots/
 
+# Reports
+reports/
+
+# Test files
+test_files/
+
+# Failed screenshots
+failed_screenshots/
+
+# Failures
+failures/
+
+# Successes
+successes/
+

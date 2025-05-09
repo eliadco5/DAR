@@ -6,6 +6,7 @@ from PIL import Image
 import shutil
 import json
 import datetime
+import argparse
 
 def pyautogui_key_name(key):
     if isinstance(key, str) and key.startswith('Key.'):
@@ -177,12 +178,13 @@ def generate_script(actions, move_event_stride=5, output_path=None, tolerance_le
         # Handle manual check actions
         elif action['type'] == 'check' and action['check_type'] == 'image':
             check_count += 1
-            check_name = f"ManualCheck_{check_count}"
+            # Use the user-provided check name if available
+            check_name = action.get('check_name', f"ManualCheck_{check_count}")
             if i in screenshot_map:
                 screenshot_path = screenshot_map[i]
                 rel_path = os.path.join('screenshots', os.path.basename(screenshot_path))
                 # Add visual verification for the check point
-                action_lines.append(f'print(f"Check #{check_count}: Performing manual visual check")')
+                action_lines.append(f'print(f"Check #{check_count}: Performing manual visual check: {check_name}")')
                 action_lines.append(f'verify_window_screenshot(os.path.join(os.path.dirname(__file__), {repr(rel_path)}), check_name={repr(check_name)}, check_index={check_count})')
                 action_lines.append(f'print("Check #{check_count}: Visual check completed")')
         last_time = t
@@ -202,9 +204,22 @@ import sys
 import json
 import datetime
 import traceback
+import argparse
 from PIL import Image, ImageChops, ImageStat
 
 pyautogui.FAILSAFE = True
+
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Automated UI test script')
+parser.add_argument('-y', '--yes', action='store_true', help='Automatically answer "yes" to continue prompts')
+parser.add_argument('-n', '--no', action='store_true', help='Automatically answer "no" to continue prompts')
+parser.add_argument('--headless', action='store_true', help='Run in headless mode, continue on errors')
+args = parser.parse_args()
+
+# Check for conflicting arguments
+if args.yes and args.no:
+    print("Error: Cannot specify both --yes and --no flags")
+    sys.exit(2)
 
 # Test reporting variables
 test_results = {{
@@ -220,13 +235,14 @@ test_results = {{
     "tolerance_level": "{tolerance_level}",
     "tolerance_value": {tolerance_value},
     "failure_line": None,
-    "failure_details": None
+    "failure_details": None,
+    "auto_continue": "no" if args.no else "yes" if args.yes else None
 }}
 
 # Visual verification settings
 TOLERANCE = {tolerance_value}  # Tolerance level: {tolerance_level}
 VERIFICATION_ENABLED = True  # Set to False to disable visual verification
-HEADLESS_MODE = False  # If True, tests will continue even if checks fail
+HEADLESS_MODE = args.headless  # If True, tests will continue even if checks fail
 
 def save_report(report_data, suffix=""):
     """Save test report to a JSON file"""
@@ -360,6 +376,12 @@ def verify_screenshot(ref_img_path, x, y, width=100, height=100, check_name=None
             
             if HEADLESS_MODE:
                 return False
+            elif args.yes:
+                print("Auto-continuing due to --yes flag")
+                return False
+            elif args.no:
+                print("Auto-stopping due to --no flag")
+                raise Exception(f"Visual verification failed at check #{{check_index}}: {{check_name}}")
             elif input("Continue anyway? (y/n): ").lower() != "y":
                 raise Exception(f"Visual verification failed at check #{{check_index}}: {{check_name}}")
             return False
@@ -367,7 +389,15 @@ def verify_screenshot(ref_img_path, x, y, width=100, height=100, check_name=None
         error_message = f"Error during visual verification at {{location}}: {{str(e)}}"
         print(f"[ERROR] Check #{{check_index}}: {{check_name}} - {{error_message}}")
         log_error(error_message, "VisualCheckError", {{"check_name": check_name, "check_index": check_index}})
-        if not HEADLESS_MODE and input("Continue anyway? (y/n): ").lower() != "y":
+        if HEADLESS_MODE:
+            return False
+        elif args.yes:
+            print("Auto-continuing due to --yes flag")
+            return False
+        elif args.no:
+            print("Auto-stopping due to --no flag")
+            raise Exception(f"Visual verification error at check #{{check_index}}: {{check_name}} - {{str(e)}}")
+        elif input("Continue anyway? (y/n): ").lower() != "y":
             raise Exception(f"Visual verification error at check #{{check_index}}: {{check_name}} - {{str(e)}}")
         return False
 
@@ -427,6 +457,12 @@ def verify_window_screenshot(ref_img_path, check_name=None, check_index=None):
             
             if HEADLESS_MODE:
                 return False
+            elif args.yes:
+                print("Auto-continuing due to --yes flag")
+                return False
+            elif args.no:
+                print("Auto-stopping due to --no flag")
+                raise Exception(f"Window visual verification failed at check #{{check_index}}: {{check_name}}")
             elif input("Continue anyway? (y/n): ").lower() != "y":
                 raise Exception(f"Window visual verification failed at check #{{check_index}}: {{check_name}}")
             return False
@@ -434,7 +470,15 @@ def verify_window_screenshot(ref_img_path, check_name=None, check_index=None):
         error_message = f"Error during window visual verification: {{str(e)}}"
         print(f"[ERROR] Check #{{check_index}}: {{check_name}} - {{error_message}}")
         log_error(error_message, "WindowVisualCheckError", {{"check_name": check_name, "check_index": check_index}})
-        if not HEADLESS_MODE and input("Continue anyway? (y/n): ").lower() != "y":
+        if HEADLESS_MODE:
+            return False
+        elif args.yes:
+            print("Auto-continuing due to --yes flag")
+            return False
+        elif args.no:
+            print("Auto-stopping due to --no flag")
+            raise Exception(f"Window visual verification error at check #{{check_index}}: {{check_name}} - {{str(e)}}")
+        elif input("Continue anyway? (y/n): ").lower() != "y":
             raise Exception(f"Window visual verification error at check #{{check_index}}: {{check_name}} - {{str(e)}}")
         return False
 
@@ -448,6 +492,12 @@ def run_test():
     try:
         print(f"Starting test: {{test_results['test_name']}}")
         print(f"Tolerance level: {{test_results['tolerance_level']}} ({{test_results['tolerance_value']}})")
+        if args.yes:
+            print("Auto-continue mode enabled (--yes flag)")
+        elif args.no:
+            print("Auto-stop mode enabled (--no flag)")
+        elif HEADLESS_MODE:
+            print("Headless mode enabled (--headless flag)")
         # Initial wait before starting the test
         time.sleep(2)
 
@@ -511,7 +561,13 @@ if __name__ == "__main__":
     # When running directly as a script
     results = run_test()
     # Exit with appropriate status code
-    sys.exit(0 if results["status"] == "PASSED" else 1)
+    if args.yes or args.headless:
+        # With --yes or --headless flag, we always exit with success
+        # since user indicated they want to continue despite failures
+        sys.exit(0)
+    else:
+        # Otherwise, exit based on test status
+        sys.exit(0 if results["status"] == "PASSED" else 1)
 else:
     # When imported as a module (by test runner)
     # Export the run_test function

@@ -1,9 +1,10 @@
 import os
 import sys
+import time
 from scriptgen.generator import generate_script
 
-# Create a dictionary-based list of actions similar to what the application uses
 def create_test_actions():
+    """Create a simple list of test actions"""
     actions = []
     
     # Add mouse actions
@@ -11,7 +12,7 @@ def create_test_actions():
         'type': 'mouse',
         'event': 'down',
         'x': 100,
-        'y': 200,
+        'y': 100,
         'timestamp': 1.0
     })
     
@@ -19,8 +20,8 @@ def create_test_actions():
         'type': 'mouse',
         'event': 'up',
         'x': 100,
-        'y': 200,
-        'timestamp': 1.1
+        'y': 100,
+        'timestamp': 1.2
     })
     
     # Add keyboard actions
@@ -52,38 +53,40 @@ def create_test_actions():
         'timestamp': 2.3
     })
     
-    # Create a check action
+    # Add check action
     actions.append({
         'type': 'check',
         'check_type': 'image',
-        'x': 300,
-        'y': 400,
-        'width': 100,
-        'height': 100,
-        'timestamp': 3.0
+        'timestamp': 3.0,
+        'check_name': 'Test Check'
     })
     
     return actions
 
 def main():
-    # Create test actions
-    actions = create_test_actions()
-    
+    """Generate a test script using our updated generator"""
     try:
-        # Generate script with tolerance settings
-        script = generate_script(actions, tolerance_level="Medium")
+        # Create test actions
+        actions = create_test_actions()
         
-        # Save to file
-        with open("test_generated_script.py", "w") as f:
+        # Generate script
+        output_path = "test_generated_script.py"
+        script = generate_script(
+            actions,
+            tolerance_level="Medium",
+            output_path=output_path
+        )
+        
+        # Write script to file
+        with open(output_path, 'w') as f:
             f.write(script)
         
-        print("Script successfully generated and saved to test_generated_script.py")
-        return 0
+        print(f"Script generated and saved to {output_path}")
     except Exception as e:
-        print(f"Error generating script: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"Error generating script: {e}")
         return 1
+    
+    return 0
 
 if __name__ == "__main__":
     sys.exit(main()) 
