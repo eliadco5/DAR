@@ -1,5 +1,6 @@
 # Converts sessions to Python scripts
 import base64
+import string
 
 def generate_script(actions, move_event_stride=5):
     lines = [
@@ -12,38 +13,105 @@ def generate_script(actions, move_event_stride=5):
     ]
     last_time = 0
     move_count = 0
-    for i, action in enumerate(actions):
+    pressed_modifiers = set()
+    i = 0
+    while i < len(actions):
+        action = actions[i]
         t = action.get('timestamp', 0)
         wait = t - last_time if t > last_time else 0
-        # Only insert sleep if not a move event and wait >= 0.1s
         if action['type'] == 'mouse' and action['event'] == 'move':
             move_count += 1
             if move_count % move_event_stride != 0:
-                continue  # Skip this move event
+                i += 1
+                last_time = t
+                continue
         else:
-            move_count = 0  # Reset on non-move event
+            move_count = 0
         if action['type'] == 'mouse' and action['event'] == 'move':
-            pass  # No sleep before move events
+            pass
         elif wait >= 0.1:
             lines.append(f'time.sleep({wait:.3f})')
-        if action['type'] == 'mouse':
-            if action['event'] == 'move':
-                lines.append(f'pyautogui.moveTo({action["x"]}, {action["y"]})')
-            elif action['event'] == 'down':
+        # Modifier tracking
+        if action['type'] == 'keyboard':
+            key = action['key']
+            if action['event'] == 'down' and key in {'ctrl', 'alt', 'shift'}:
+                pressed_modifiers.add(key)
+                i += 1
+                last_time = t
+                continue
+            elif action['event'] == 'up' and key in {'ctrl', 'alt', 'shift'}:
+                pressed_modifiers.discard(key)
+                i += 1
+                last_time = t
+                continue
+            # If keydown of non-modifier
+            elif action['event'] == 'down' and key not in {'ctrl', 'alt', 'shift'}:
+                if pressed_modifiers:
+                    hotkey_args = ', '.join(repr(m) for m in sorted(pressed_modifiers)) + f', {repr(key)}'
+                    lines.append(f'pyautogui.hotkey({hotkey_args})')
+                    # skip the up event if present
+                    if (i + 1 < len(actions)
+                        and actions[i + 1]['type'] == 'keyboard'
+                        and actions[i + 1]['event'] == 'up'
+                        and actions[i + 1]['key'] == key):
+                        i += 1
+                else:
+                    # Group printable key downs into write()
+                    if isinstance(key, str) and len(key) == 1 and key in string.printable and key not in '\r\n\t':
+                        text = ''
+                        j = i
+                        while (j < len(actions)
+                               and actions[j]['type'] == 'keyboard'
+                               and actions[j]['event'] == 'down'
+                               and isinstance(actions[j]['key'], str)
+                               and len(actions[j]['key']) == 1
+                               and actions[j]['key'] in string.printable
+                               and actions[j]['key'] not in '\r\n\t'):
+                            text += actions[j]['key']
+                            # skip the up event if present
+                            if (j + 1 < len(actions)
+                                and actions[j + 1]['type'] == 'keyboard'
+                                and actions[j + 1]['event'] == 'up'
+                                and actions[j + 1]['key'] == actions[j]['key']):
+                                j += 2
+                            else:
+                                j += 1
+                        if text:
+                            lines.append(f'pyautogui.write({repr(text)})')
+                            i = j
+                            last_time = t
+                            continue
+                    # Use press for special keys
+                    lines.append(f'pyautogui.press({repr(key)})')
+                    # skip the up event if present
+                    if (i + 1 < len(actions)
+                        and actions[i + 1]['type'] == 'keyboard'
+                        and actions[i + 1]['event'] == 'up'
+                        and actions[i + 1]['key'] == key):
+                        i += 1
+        # Mouse click detection
+        if action['type'] == 'mouse' and action['event'] == 'down':
+            if (i + 1 < len(actions)
+                and actions[i + 1]['type'] == 'mouse'
+                and actions[i + 1]['event'] == 'up'
+                and actions[i + 1]['x'] == action['x']
+                and actions[i + 1]['y'] == action['y']):
+                lines.append(f'pyautogui.click({action["x"]}, {action["y"]})')
+                i += 2
+                last_time = t
+                continue
+            else:
                 lines.append(f'pyautogui.moveTo({action["x"]}, {action["y"]})')
                 lines.append(f'pyautogui.mouseDown()')
-            elif action['event'] == 'up':
-                lines.append(f'pyautogui.moveTo({action["x"]}, {action["y"]})')
-                lines.append(f'pyautogui.mouseUp()')
-            elif action['event'] == 'scroll':
-                lines.append(f'pyautogui.scroll({action["dy"]}, x={action["x"]}, y={action["y"]})')
-        elif action['type'] == 'keyboard':
-            key = action.get('key', '').replace("'", "")
-            if action['event'] == 'down':
-                lines.append(f'pyautogui.keyDown({repr(key)})')
-            elif action['event'] == 'up':
-                lines.append(f'pyautogui.keyUp({repr(key)})')
+        elif action['type'] == 'mouse' and action['event'] == 'up':
+            lines.append(f'pyautogui.moveTo({action["x"]}, {action["y"]})')
+            lines.append(f'pyautogui.mouseUp()')
+        elif action['type'] == 'mouse' and action['event'] == 'move':
+            lines.append(f'pyautogui.moveTo({action["x"]}, {action["y"]})')
+        elif action['type'] == 'mouse' and action['event'] == 'scroll':
+            lines.append(f'pyautogui.scroll({action["dy"]}, x={action["x"]}, y={action["y"]})')
         last_time = t
+        i += 1
     return '\n'.join(lines)
 
 class ScriptGenerator:
