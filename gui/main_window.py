@@ -1,5 +1,6 @@
 # Main Tkinter window and controls
 import tkinter as tk
+from tkinter import ttk
 from utils.hotkeys import HotkeyManager
 from recorder.session import SessionManager
 from gui.editor import ActionEditor
@@ -8,58 +9,81 @@ class MainWindow:
     def __init__(self, root=None):
         self.root = root or tk.Tk()
         self.root.title("Desktop Automation Recorder")
-        self.root.geometry("800x600")
+        self.root.minsize(1100, 700)
+        self.root.geometry("1200x800")
+        self.root.configure(bg="#f4f4f4")
 
+        style = ttk.Style(self.root)
+        style.theme_use('clam')
+        style.configure('TButton', font=('Segoe UI', 12), padding=6)
+        style.configure('TLabel', font=('Segoe UI', 12))
+        style.configure('Header.TLabel', font=('Segoe UI', 20, 'bold'), background="#f4f4f4")
+        style.configure('Status.TLabel', font=('Segoe UI', 12), background="#eaeaea")
+        style.configure('Sidebar.TFrame', background="#eaeaea")
+        style.configure('Sidebar.TButton', font=('Segoe UI', 12), padding=10, background="#eaeaea")
+
+        # Main layout: sidebar + main area
+        main_frame = ttk.Frame(self.root)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Sidebar for main actions
+        sidebar = ttk.Frame(main_frame, style='Sidebar.TFrame', width=200)
+        sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10), pady=0)
+        sidebar.pack_propagate(False)
+
+        self.header = ttk.Label(sidebar, text="Automation Recorder", style='Header.TLabel', anchor='center')
+        self.header.pack(pady=(30, 30), fill=tk.X)
+
+        self.start_button = ttk.Button(sidebar, text="Start Recording", command=self.start_recording, style='Sidebar.TButton')
+        self.start_button.pack(fill=tk.X, pady=5, padx=20)
+        self.pause_button = ttk.Button(sidebar, text="Pause Recording", command=self.pause_recording, style='Sidebar.TButton')
+        self.pause_button.pack(fill=tk.X, pady=5, padx=20)
+        self.stop_button = ttk.Button(sidebar, text="Stop Recording", command=self.stop_recording, style='Sidebar.TButton')
+        self.stop_button.pack(fill=tk.X, pady=5, padx=20)
+        self.preview_button = ttk.Button(sidebar, text="Preview", command=self.preview_actions, style='Sidebar.TButton')
+        self.preview_button.pack(fill=tk.X, pady=5, padx=20)
+        self.save_button = ttk.Button(sidebar, text="Save", command=self.save_session, style='Sidebar.TButton')
+        self.save_button.pack(fill=tk.X, pady=5, padx=20)
+        self.load_button = ttk.Button(sidebar, text="Load", command=self.load_session, style='Sidebar.TButton')
+        self.load_button.pack(fill=tk.X, pady=5, padx=20)
+        self.export_script_button = ttk.Button(sidebar, text="Export as Script", command=self.export_script, style='Sidebar.TButton')
+        self.export_script_button.pack(fill=tk.X, pady=5, padx=20)
+
+        # Main area for action list and editing
+        content_frame = ttk.Frame(main_frame)
+        content_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 0), pady=0)
+
+        # Status bar at the bottom
         self.status_var = tk.StringVar(value="Idle")
-        self.status_label = tk.Label(self.root, textvariable=self.status_var, fg="blue")
-        self.status_label.pack(pady=10)
+        status_bar = ttk.Label(self.root, textvariable=self.status_var, style='Status.TLabel', anchor='w', relief=tk.SUNKEN)
+        status_bar.pack(side=tk.BOTTOM, fill=tk.X, ipady=6)
 
-        self.start_button = tk.Button(self.root, text="Start Recording", command=self.start_recording)
-        self.start_button.pack(pady=5)
-
-        self.pause_button = tk.Button(self.root, text="Pause Recording", command=self.pause_recording)
-        self.pause_button.pack(pady=5)
-
-        self.stop_button = tk.Button(self.root, text="Stop Recording", command=self.stop_recording)
-        self.stop_button.pack(pady=5)
-
-        # Action list and editor
-        self.action_editor = ActionEditor()
-        self.session_manager = SessionManager()
-
-        self.actions_listbox = tk.Listbox(self.root, width=80, height=10)
-        self.actions_listbox.pack(pady=10)
+        # Action list frame
+        action_frame = ttk.LabelFrame(content_frame, text="Recorded Actions")
+        action_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(30, 10))
+        self.actions_listbox = tk.Listbox(action_frame, width=90, height=25, font=('Segoe UI', 11))
+        self.actions_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10,0), pady=10)
         self.actions_listbox.bind('<Delete>', lambda e: self.delete_action())
         self.actions_listbox.bind('<BackSpace>', lambda e: self.delete_action())
+        scrollbar = ttk.Scrollbar(action_frame, orient=tk.VERTICAL, command=self.actions_listbox.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=10)
+        self.actions_listbox.config(yscrollcommand=scrollbar.set)
 
-        self.edit_frame = tk.Frame(self.root)
-        self.edit_frame.pack(pady=5)
-        self.delete_button = tk.Button(self.edit_frame, text="Delete", command=self.delete_action)
-        self.delete_button.grid(row=0, column=0, padx=5)
-        self.move_up_button = tk.Button(self.edit_frame, text="Move Up", command=self.move_action_up)
-        self.move_up_button.grid(row=0, column=1, padx=5)
-        self.move_down_button = tk.Button(self.edit_frame, text="Move Down", command=self.move_action_down)
-        self.move_down_button.grid(row=0, column=2, padx=5)
+        # Edit controls frame
+        edit_frame = ttk.Frame(content_frame)
+        edit_frame.pack(pady=10)
+        self.delete_button = ttk.Button(edit_frame, text="Delete", command=self.delete_action)
+        self.delete_button.grid(row=0, column=0, padx=10)
+        self.move_up_button = ttk.Button(edit_frame, text="Move Up", command=self.move_action_up)
+        self.move_up_button.grid(row=0, column=1, padx=10)
+        self.move_down_button = ttk.Button(edit_frame, text="Move Down", command=self.move_action_down)
+        self.move_down_button.grid(row=0, column=2, padx=10)
+        self.view_screenshot_button = ttk.Button(edit_frame, text="View Screenshot", command=self.view_screenshot)
+        self.view_screenshot_button.grid(row=0, column=3, padx=10)
 
-        # View Screenshot button
-        self.view_screenshot_button = tk.Button(self.root, text="View Screenshot", command=self.view_screenshot)
-        self.view_screenshot_button.pack(pady=5)
-
-        # Save and Load buttons
-        self.save_load_frame = tk.Frame(self.root)
-        self.save_load_frame.pack(pady=5)
-        self.save_button = tk.Button(self.save_load_frame, text="Save", command=self.save_session)
-        self.save_button.grid(row=0, column=0, padx=5)
-        self.load_button = tk.Button(self.save_load_frame, text="Load", command=self.load_session)
-        self.load_button.grid(row=0, column=1, padx=5)
-
-        # Export as Script button
-        self.export_script_button = tk.Button(self.root, text="Export as Script", command=self.export_script)
-        self.export_script_button.pack(pady=5)
-
-        # Preview button
-        self.preview_button = tk.Button(self.root, text="Preview", command=self.preview_actions)
-        self.preview_button.pack(pady=5)
+        # Action editor and session manager
+        self.action_editor = ActionEditor()
+        self.session_manager = SessionManager()
 
         self.hotkeys = HotkeyManager(on_pause=self.pause_recording, on_stop=self.stop_recording)
         self.hotkeys.start()
@@ -68,19 +92,16 @@ class MainWindow:
     def start_recording(self):
         self.session_manager.start()
         self.status_var.set("Recording...")
-        self.status_label.config(fg="red")
         self.update_action_list()
         self.root.after(100, self.poll_actions)
 
     def pause_recording(self):
         self.session_manager.pause()
         self.status_var.set("Paused")
-        self.status_label.config(fg="orange")
 
     def stop_recording(self):
         self.session_manager.stop()
         self.status_var.set("Stopped")
-        self.status_label.config(fg="gray")
         self.update_action_list()
 
     def poll_actions(self):
