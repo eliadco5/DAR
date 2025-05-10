@@ -83,6 +83,12 @@ class MainWindow(QMainWindow):
         self.start_button.clicked.connect(self.start_recording)
         self.pause_button = QPushButton('Pause Recording (F8)')
         self.pause_button.clicked.connect(self.pause_recording)
+        self.pause_button.setEnabled(False)  # Initially disabled
+        self.pause_button.setStyleSheet("""
+            QPushButton:disabled { 
+                color: #888888; 
+            }
+        """)
         self.stop_button = QPushButton('Stop Recording (F10)')
         self.stop_button.clicked.connect(self.stop_recording)
         self.check_button = QPushButton('Add Check (F7)')
@@ -91,12 +97,24 @@ class MainWindow(QMainWindow):
         self.comment_button.clicked.connect(self.add_comment_action)
         self.preview_button = QPushButton('Preview')
         self.preview_button.clicked.connect(self.preview_actions)
+        self.preview_button.setEnabled(False)  # Initially disabled
+        self.preview_button.setStyleSheet("""
+            QPushButton:disabled { 
+                color: #888888; 
+            }
+        """)
         self.save_button = QPushButton('Save')
         self.save_button.clicked.connect(self.save_session)
         self.load_button = QPushButton('Load')
         self.load_button.clicked.connect(self.load_session)
         self.test_check_button = QPushButton('Test Check Failure')
         self.test_check_button.clicked.connect(self.test_check_failure)
+        self.test_check_button.setEnabled(False)  # Initially disabled
+        self.test_check_button.setStyleSheet("""
+            QPushButton:disabled { 
+                color: #888888; 
+            }
+        """)
         
         for btn in [self.start_button, self.pause_button, self.stop_button, 
                    self.check_button, self.comment_button, self.preview_button, 
@@ -124,6 +142,12 @@ class MainWindow(QMainWindow):
         self.export_script_button = QPushButton('Generate Script')
         self.export_script_button.clicked.connect(self.export_script)
         self.export_script_button.setMinimumHeight(40)
+        self.export_script_button.setEnabled(False)  # Initially disabled
+        self.export_script_button.setStyleSheet("""
+            QPushButton:disabled { 
+                color: #888888; 
+            }
+        """)
         sidebar_layout.addWidget(self.export_script_button)
 
         # Left side - operations panel
@@ -247,7 +271,8 @@ class MainWindow(QMainWindow):
             on_stop=self.stop_recording,
             on_check=self.add_check_action,
             on_resume=self.resume_recording,
-            on_comment=self.add_comment_action
+            on_comment=self.add_comment_action,
+            get_session_state=self.get_session_state
         )
         self.hotkeys.start()
         self._setup_shortcuts()
@@ -286,16 +311,33 @@ class MainWindow(QMainWindow):
         self.update_pause_resume_button(paused=False)
         self.update_action_list()
         self._poll_actions()
+        
+        # Enable pause button when recording starts
+        self.pause_button.setEnabled(True)
+        
+        # Minimize the window when recording starts
+        self.showMinimized()
 
     def pause_recording(self):
-        self.session_manager.pause()
-        self.status_label.setText("Paused")
-        self.update_pause_resume_button(paused=True)
+        # Only pause if recording is active
+        if self.session_manager.state == 'recording':
+            self.session_manager.pause()
+            self.status_label.setText("Paused")
+            self.update_pause_resume_button(paused=True)
 
     def stop_recording(self):
         self.session_manager.stop()
         self.status_label.setText("Stopped")
         self.update_action_list()
+        
+        # Disable pause button when recording stops
+        self.pause_button.setEnabled(False)
+        
+        # Enable other buttons if there are actions
+        has_actions = len(self.action_editor.get_actions()) > 0
+        self.preview_button.setEnabled(has_actions)
+        self.export_script_button.setEnabled(has_actions)
+        self.test_check_button.setEnabled(has_actions)
 
     def _poll_actions(self):
         """Poll for new actions and update the UI.
@@ -359,6 +401,12 @@ class MainWindow(QMainWindow):
                 item.setData(Qt.ItemDataRole.UserRole, action)
                 self.action_list.addItem(item)
         self.action_list.scrollToBottom()
+        
+        # Enable/disable buttons based on whether there are any actions
+        has_actions = len(self.action_editor.get_actions()) > 0
+        self.preview_button.setEnabled(has_actions)
+        self.export_script_button.setEnabled(has_actions)
+        self.test_check_button.setEnabled(has_actions)
 
     def delete_action(self):
         row = self.action_list.currentRow()
@@ -366,6 +414,12 @@ class MainWindow(QMainWindow):
             self.action_editor.delete_action(row)
             self.session_manager.listener.events = self.action_editor.get_actions()
             self.update_action_list()
+            
+            # Check if all actions have been deleted
+            has_actions = len(self.action_editor.get_actions()) > 0
+            self.preview_button.setEnabled(has_actions)
+            self.export_script_button.setEnabled(has_actions)
+            self.test_check_button.setEnabled(has_actions)
 
     def move_action_up(self):
         row = self.action_list.currentRow()
@@ -424,6 +478,13 @@ class MainWindow(QMainWindow):
                 self.action_editor.set_actions(actions)
                 self.session_manager.listener.events = self.action_editor.get_actions()
                 self.update_action_list()
+                
+                # Enable buttons since we now have actions
+                has_actions = len(actions) > 0
+                self.preview_button.setEnabled(has_actions)
+                self.export_script_button.setEnabled(has_actions)
+                self.test_check_button.setEnabled(has_actions)
+                
                 QMessageBox.information(self, "Loaded", f"Session loaded from {filepath}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Could not load session: {e}")
@@ -1075,11 +1136,14 @@ class MainWindow(QMainWindow):
     def resume_recording(self):
         """Resume recording after it was paused"""
         print("DEBUG: Manual resume requested")
-        self.session_manager.resume()
-        self.status_label.setText("Recording...")
-        self.update_pause_resume_button(paused=False)
-        # Make sure polling is restarted
-        self._poll_actions()
+        
+        # Only resume if we're actually paused
+        if self.session_manager.state == 'paused':
+            self.session_manager.resume()
+            self.status_label.setText("Recording...")
+            self.update_pause_resume_button(paused=False)
+            # Make sure polling is restarted
+            self._poll_actions()
 
     def update_pause_resume_button(self, paused=True):
         if paused:
@@ -1408,6 +1472,9 @@ class MainWindow(QMainWindow):
             "Recording..." if self.session_manager.state == 'recording' else 
             "Paused" if self.session_manager.state == 'paused' else "Stopped"))
             
+    def get_session_state(self):
+        """Return the current session state for hotkey manager"""
+        return self.session_manager.state
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
