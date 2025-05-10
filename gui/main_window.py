@@ -81,8 +81,8 @@ class MainWindow(QMainWindow):
 
         self.start_button = QPushButton('Start Recording')
         self.start_button.clicked.connect(self.start_recording)
-        self.pause_button = QPushButton('Pause Recording')
-        self.pause_button.clicked.connect(self.pause_recording (F8))
+        self.pause_button = QPushButton('Pause Recording (F8)')
+        self.pause_button.clicked.connect(self.pause_recording)
         self.stop_button = QPushButton('Stop Recording (F10)')
         self.stop_button.clicked.connect(self.stop_recording)
         self.check_button = QPushButton('Add Check (F7)')
