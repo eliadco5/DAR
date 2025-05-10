@@ -82,27 +82,25 @@ class MainWindow(QMainWindow):
         self.start_button = QPushButton('Start Recording')
         self.start_button.clicked.connect(self.start_recording)
         self.pause_button = QPushButton('Pause Recording')
-        self.pause_button.clicked.connect(self.pause_recording)
-        self.stop_button = QPushButton('Stop Recording')
+        self.pause_button.clicked.connect(self.pause_recording (F8))
+        self.stop_button = QPushButton('Stop Recording (F10)')
         self.stop_button.clicked.connect(self.stop_recording)
+        self.check_button = QPushButton('Add Check (F7)')
+        self.check_button.clicked.connect(self.add_check_action)
+        self.comment_button = QPushButton('Add Comment (F6)')
+        self.comment_button.clicked.connect(self.add_comment_action)
         self.preview_button = QPushButton('Preview')
         self.preview_button.clicked.connect(self.preview_actions)
         self.save_button = QPushButton('Save')
         self.save_button.clicked.connect(self.save_session)
         self.load_button = QPushButton('Load')
         self.load_button.clicked.connect(self.load_session)
-        self.export_script_button = QPushButton('Generate Script')
-        self.export_script_button.clicked.connect(self.export_script)
-        self.check_button = QPushButton('Add Check (F7)')
-        self.check_button.clicked.connect(self.add_check_action)
-        self.comment_button = QPushButton('Add Comment (F6)')
-        self.comment_button.clicked.connect(self.add_comment_action)
         self.test_check_button = QPushButton('Test Check Failure')
         self.test_check_button.clicked.connect(self.test_check_failure)
+        
         for btn in [self.start_button, self.pause_button, self.stop_button, 
-                   self.preview_button, self.save_button, self.load_button, 
-                   self.export_script_button, self.check_button, self.comment_button, 
-                   self.test_check_button]:
+                   self.check_button, self.comment_button, self.preview_button, 
+                   self.save_button, self.load_button, self.test_check_button]:
             btn.setMinimumHeight(40)
             sidebar_layout.addWidget(btn)
 
@@ -120,6 +118,13 @@ class MainWindow(QMainWindow):
         )
         sidebar_layout.addWidget(self.tolerance_label)
         sidebar_layout.addWidget(self.tolerance_combo)
+        
+        # Add Generate Script button at the bottom with some spacing
+        sidebar_layout.addStretch(1)  # Add stretch to push the button to the bottom
+        self.export_script_button = QPushButton('Generate Script')
+        self.export_script_button.clicked.connect(self.export_script)
+        self.export_script_button.setMinimumHeight(40)
+        sidebar_layout.addWidget(self.export_script_button)
 
         # Left side - operations panel
         operations_panel = QWidget()
@@ -1078,11 +1083,11 @@ class MainWindow(QMainWindow):
 
     def update_pause_resume_button(self, paused=True):
         if paused:
-            self.pause_button.setText("Resume Recording")
+            self.pause_button.setText("Resume Recording (F9)")
             self.pause_button.clicked.disconnect()
             self.pause_button.clicked.connect(self.resume_recording)
         else:
-            self.pause_button.setText("Pause Recording")
+            self.pause_button.setText("Pause Recording (F8)")
             self.pause_button.clicked.disconnect()
             self.pause_button.clicked.connect(self.pause_recording)
 
@@ -1109,6 +1114,7 @@ class MainWindow(QMainWindow):
         current_state = self.session_manager.state
         
         print(f"DEBUG: Executing add comment. Current state: {current_state}")
+        print(f"DEBUG: Window focus fix for comment dialog (F6) initiated")
         
         # Pause recording temporarily while showing the dialog
         if was_recording:
@@ -1129,25 +1135,27 @@ class MainWindow(QMainWindow):
                 try_windows_focus = True
             except Exception as e:
                 print(f"DEBUG: Windows focus utilities not available: {e}")
+                traceback.print_exc()  # Print full stack trace for better diagnosis
                 pass
         
         # Create a custom dialog that will stay on top of all windows
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel
         from PyQt6.QtCore import Qt
         
-        dialog = QDialog(None)  # Create with no parent initially
+        dialog = QDialog(None)  # Create with no parent to ensure it's a true top-level window
         dialog.setWindowTitle("Enter Your Comment")
         
         # Set strong always-on-top flags to ensure dialog is visible and gets focus
         dialog.setWindowFlags(
             Qt.WindowType.Window |  # Create as a window
             Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.MSWindowsFixedSizeDialogHint |  # Windows-specific flag for better focus
             Qt.WindowType.X11BypassWindowManagerHint |  # More forceful on Linux
             Qt.WindowType.Tool |  # Makes it a tool window which typically has higher z-order
             Qt.WindowType.FramelessWindowHint  # Remove frame for better focus
         )
         
-        print(f"DEBUG: Dialog window flags: {dialog.windowFlags()}")
+        print(f"DEBUG: Comment dialog window flags: {dialog.windowFlags()}")
         
         dialog.setMinimumWidth(400)
         dialog.setModal(True)
@@ -1263,52 +1271,72 @@ class MainWindow(QMainWindow):
         
         # Set up a timer to ensure dialog gets focus - important for external window activation
         def force_focus():
-            dialog.activateWindow()
-            dialog.raise_()
-            line_edit.setFocus()
-            
-            # Windows-specific focus handling
-            if try_windows_focus:
-                try:
-                    # Get dialog window handle
-                    hwnd = int(dialog.winId())
-                    print(f"DEBUG: Comment dialog window handle: {hwnd}")
-                    
-                    # Windows constants
-                    HWND_TOPMOST = -1
-                    HWND_NOTOPMOST = -2
-                    SWP_NOSIZE = 0x0001
-                    SWP_NOMOVE = 0x0002
-                    
-                    # Force window to top and give it focus
-                    user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
-                    user32.SetForegroundWindow(hwnd)
-                    user32.SetFocus(hwnd)
-                    user32.SetActiveWindow(hwnd)
-                    
-                    # Flash window in taskbar to get user attention
-                    user32.FlashWindow(hwnd, True)
-                    
-                    print("DEBUG: Windows focus methods applied")
-                except Exception as e:
-                    print(f"DEBUG: Windows focus error: {e}")
-                    traceback.print_exc()
+            try:
+                print("DEBUG: Applying comment dialog focus")
+                dialog.activateWindow()
+                dialog.raise_()
+                line_edit.setFocus()
+                
+                # Windows-specific focus handling
+                if try_windows_focus and sys.platform == 'win32':
+                    try:
+                        # Get dialog window handle
+                        hwnd = int(dialog.winId())
+                        print(f"DEBUG: Comment dialog window handle: {hwnd}")
+                        
+                        # Windows constants
+                        HWND_TOPMOST = -1
+                        HWND_NOTOPMOST = -2
+                        SWP_NOSIZE = 0x0001
+                        SWP_NOMOVE = 0x0002
+                        SWP_SHOWWINDOW = 0x0040
+                        SWP_NOACTIVATE = 0x0010
+                        
+                        # Force window to top and give it focus - multiple techniques for redundancy
+                        user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+                        user32.SetForegroundWindow(hwnd)
+                        user32.SetFocus(hwnd)
+                        user32.SetActiveWindow(hwnd)
+                        
+                        # Get current thread ID and foreground window thread ID
+                        current_thread_id = user32.GetCurrentThreadId()
+                        foreground_thread_id = user32.GetWindowThreadProcessId(user32.GetForegroundWindow(), None)
+                        
+                        # Attach our thread input to foreground to help with focus
+                        if current_thread_id != foreground_thread_id:
+                            user32.AttachThreadInput(current_thread_id, foreground_thread_id, True)
+                            user32.SetForegroundWindow(hwnd)
+                            user32.AttachThreadInput(current_thread_id, foreground_thread_id, False)
+                            
+                        # Flash window in taskbar to get user attention - use multiple flashes
+                        user32.FlashWindow(hwnd, True)
+                        
+                        print("DEBUG: Windows focus methods applied for comment dialog")
+                    except Exception as e:
+                        print(f"DEBUG: Windows focus error: {e}")
+                        traceback.print_exc()  # Print full stack trace for better diagnosis
+            except Exception as e:
+                print(f"DEBUG: Focus error: {e}")
+                traceback.print_exc()  # Print full stack trace for better diagnosis
         
         # Use multiple timers with different delays to handle race conditions with window managers
-        print("DEBUG: Setting up focus timers")
-        QTimer.singleShot(50, force_focus)
+        # Use more timing attempts with shorter initial delay
+        print("DEBUG: Setting up comment dialog focus timers")
+        QTimer.singleShot(20, force_focus)  # Try immediately
+        QTimer.singleShot(50, force_focus)  # Try after short delay
         QTimer.singleShot(150, force_focus)
         QTimer.singleShot(300, force_focus)
         QTimer.singleShot(600, force_focus)  # Add an extra longer timer
+        QTimer.singleShot(1000, force_focus)  # Add an extra very long timer as a fallback
         
         # Short delay before showing dialog to let the system prepare
         # This helps with focus issues on some platforms
-        print("DEBUG: Pre-show delay")
-        time.sleep(0.2)  # Slightly longer delay than check dialog
+        print("DEBUG: Pre-show delay for comment dialog")
+        time.sleep(0.2)  # 200ms delay
         
         # Set up keyboard handling to improve focus
         def keyPressEvent(event):
-            print(f"DEBUG: Dialog key press: {event.key()}")
+            print(f"DEBUG: Comment dialog key press: {event.key()}")
             if event.key() == Qt.Key.Key_Escape:
                 dialog.reject()
             elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
@@ -1328,7 +1356,7 @@ class MainWindow(QMainWindow):
         print("DEBUG: Showing comment dialog")
         # Show dialog and get result - exec() will block until dialog is closed
         result = dialog.exec()
-        print(f"DEBUG: Dialog result: {result}")
+        print(f"DEBUG: Comment dialog result: {result}")
         
         # Get the comment if OK was clicked
         if result == QDialog.DialogCode.Accepted:
