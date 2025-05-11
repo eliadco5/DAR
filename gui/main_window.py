@@ -215,10 +215,40 @@ class MainWindow(QMainWindow):
         error_layout.addLayout(image_layout)
         
         # Add continue/ignore button
+        button_layout = QHBoxLayout()
+        
+        self.dont_continue_button = QPushButton('Stop Test')
+        self.dont_continue_button.clicked.connect(self.stop_after_error)
+        self.dont_continue_button.setMinimumHeight(40)
+        self.dont_continue_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #B33A3A; 
+                color: white;
+                font-weight: bold;
+            }
+            QPushButton:hover { 
+                background-color: #D44242;
+            }
+        """)
+        
         self.continue_button = QPushButton('Continue Anyway')
         self.continue_button.clicked.connect(self.continue_after_error)
         self.continue_button.setMinimumHeight(40)
-        error_layout.addWidget(self.continue_button)
+        self.continue_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #3A7CA5; 
+                color: white;
+                font-weight: bold;
+            }
+            QPushButton:hover { 
+                background-color: #4590BD;
+            }
+        """)
+        
+        button_layout.addWidget(self.dont_continue_button)
+        button_layout.addWidget(self.continue_button)
+        
+        error_layout.addLayout(button_layout)
         
         # Hide error panel initially
         self.error_panel.hide()
@@ -624,27 +654,56 @@ class MainWindow(QMainWindow):
                 self.check_event.clear()  # Reset event
                 self.continue_after_fail = False
                 
-                # Run playback with the configured tolerance
-                tolerance = self.get_tolerance_value()
-                result, fail_info = play_actions(
-                    self.action_editor.get_actions(), 
-                    tolerance=tolerance, 
-                    fail_callback=self.on_visual_check_failed
-                )
+                # Get actions once so we can modify the starting point if needed
+                all_actions = self.action_editor.get_actions()
+                start_index = 0
                 
-                # If playback failed due to visual check
-                if not result and fail_info:
-                    # Wait for user to decide whether to continue
-                    self.check_event.wait()  # Wait until user makes a decision
+                while start_index < len(all_actions):
+                    # Create a subset of actions starting from the current index
+                    actions = all_actions[start_index:]
                     
-                    # If user chose to continue, restart playback
-                    if self.continue_after_fail:
-                        # Continue playback from where it left off
-                        # This would require modifying play_actions to accept a start index
-                        # For now, we just signal playback is done
-                        pass
+                    # Log what we're about to do for debugging
+                    print(f"DEBUG: Starting playback from index {start_index} (of {len(all_actions)} total)")
+                    if len(actions) > 0:
+                        next_action = actions[0]
+                        print(f"DEBUG: Next action type: {next_action.get('type', 'unknown')}")
+                    
+                    # Run playback with the configured tolerance, starting with the subset of actions
+                    tolerance = self.get_tolerance_value()
+                    result, fail_info, last_action_index = play_actions(
+                        actions, 
+                        tolerance=tolerance, 
+                        fail_callback=self.on_visual_check_failed,
+                        start_index=0  # We're starting from the beginning of the slice
+                    )
+                    
+                    # Adjust the index to be relative to the original list
+                    actual_last_index = start_index + last_action_index
+                    print(f"DEBUG: Playback returned result={result}, last_action_index={last_action_index}, actual_last_index={actual_last_index}")
+                    
+                    # If playback failed due to visual check
+                    if not result and fail_info:
+                        # Wait for user to decide whether to continue
+                        print("DEBUG: Waiting for user decision on check failure")
+                        self.check_event.wait()  # Wait until user makes a decision
+                        print(f"DEBUG: User decided to {'continue' if self.continue_after_fail else 'stop'}")
+                        
+                        # If user chose to continue, restart playback from the next action
+                        if self.continue_after_fail:
+                            # Continue from the action after the one that failed
+                            start_index = actual_last_index + 1
+                            print(f"DEBUG: Continuing from index {start_index}")
+                            continue
+                        else:
+                            # User chose to stop
+                            print("DEBUG: User chose to stop playback")
+                            break
+                    
+                    # If we got here, playback completed without errors or was the final segment
+                    break
             except Exception as e:
                 print(f"Playback error: {e}")
+                traceback.print_exc()  # Print full stack trace for better diagnosis
                 result = False
             finally:
                 # Signal that playback is finished
@@ -999,6 +1058,9 @@ class MainWindow(QMainWindow):
             self.error_panel.hide()
             return
             
+        # Make sure the continue event is reset so we wait for user input
+        self.check_event.clear()
+        
         # Restore window from minimized state when a check fails
         self.setWindowState(Qt.WindowState.WindowActive)
         self.activateWindow()
@@ -1040,6 +1102,10 @@ class MainWindow(QMainWindow):
         )
         self.error_status.setStyleSheet("color: #FF4444; font-weight: bold;")
         
+        # Ensure continue and stop buttons are enabled
+        self.continue_button.setEnabled(True)
+        self.dont_continue_button.setEnabled(True)
+        
         # Show the error panel
         self.error_panel.show()
     
@@ -1060,8 +1126,22 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Test Complete", "Playback completed with errors. Check the error panel for details.")
             self.status_label.setText("Playback completed with errors")
     
+    def stop_after_error(self):
+        """User clicked Stop Test button after an error"""
+        # Disable both buttons to prevent multiple clicks
+        self.continue_button.setEnabled(False)
+        self.dont_continue_button.setEnabled(False)
+        
+        self.continue_after_fail = False
+        self.error_panel.hide()
+        self.check_event.set()  # Signal the waiting thread to continue but with stop flag set to false
+
     def continue_after_error(self):
         """User clicked Continue button after an error"""
+        # Disable both buttons to prevent multiple clicks
+        self.continue_button.setEnabled(False)
+        self.dont_continue_button.setEnabled(False)
+        
         self.continue_after_fail = True
         self.error_panel.hide()
         self.check_event.set()  # Signal the waiting thread to continue
@@ -1110,31 +1190,66 @@ class MainWindow(QMainWindow):
                 self.continue_after_fail = False
                 
                 # Get all actions
-                actions = self.action_editor.get_actions()
+                all_actions = self.action_editor.get_actions()
+                start_index = 0
                 
-                # Create a modified copy of the actions for testing
-                test_actions = []
-                for action in actions:
-                    action_copy = action.copy()
-                    if action_copy['type'] == 'check' and action_copy['check_type'] == 'image':
-                        # Add force_fail flag to check actions
-                        action_copy['force_fail'] = True
-                    test_actions.append(action_copy)
-                
-                # Run playback with the configured tolerance and test actions
-                tolerance = self.get_tolerance_value()
-                result, fail_info = play_actions(
-                    test_actions, 
-                    tolerance=tolerance, 
-                    fail_callback=self.on_visual_check_failed
-                )
-                
-                # If playback failed due to visual check (which it should)
-                if not result and fail_info:
-                    # Wait for user to decide whether to continue
-                    self.check_event.wait()  # Wait until user makes a decision
+                while start_index < len(all_actions):
+                    # Log what we're about to do for debugging
+                    print(f"DEBUG: Starting test failure from index {start_index} (of {len(all_actions)} total)")
+                    
+                    # Create a slice of the actions from current position to the end
+                    actions_slice = all_actions[start_index:]
+                    if len(actions_slice) > 0:
+                        next_action = actions_slice[0]
+                        print(f"DEBUG: Next action type: {next_action.get('type', 'unknown')}")
+                    
+                    # Create a modified copy of the actions for testing,
+                    # with force_fail set for all check actions
+                    test_actions = []
+                    for action in actions_slice:
+                        action_copy = action.copy()
+                        if action_copy['type'] == 'check' and action_copy['check_type'] == 'image':
+                            # Add force_fail flag to check actions
+                            action_copy['force_fail'] = True
+                        test_actions.append(action_copy)
+                    
+                    # Run playback with the configured tolerance and test actions
+                    tolerance = self.get_tolerance_value()
+                    print(f"DEBUG: Submitting {len(test_actions)} actions to play_actions")
+                    result, fail_info, last_action_index = play_actions(
+                        test_actions, 
+                        tolerance=tolerance, 
+                        fail_callback=self.on_visual_check_failed,
+                        start_index=0  # We're always starting from the beginning of test_actions
+                    )
+                    
+                    # Adjust the index to be relative to the original list
+                    actual_last_index = start_index + last_action_index
+                    print(f"DEBUG: Test playback returned result={result}, last_action_index={last_action_index}, actual_last_index={actual_last_index}")
+                    
+                    # If playback failed due to visual check (which it should)
+                    if not result and fail_info:
+                        # Wait for user to decide whether to continue
+                        print("DEBUG: Waiting for user decision on check failure")
+                        self.check_event.wait()  # Wait until user makes a decision
+                        print(f"DEBUG: User decided to {'continue' if self.continue_after_fail else 'stop'}")
+                        
+                        # If user chose to continue, restart playback from the next action
+                        if self.continue_after_fail:
+                            # Continue from the action after the one that failed
+                            start_index = actual_last_index + 1
+                            print(f"DEBUG: Continuing test from index {start_index}")
+                            continue
+                        else:
+                            # User chose to stop
+                            print("DEBUG: User chose to stop test playback")
+                            break
+                    
+                    # If we got here, playback completed without errors
+                    break
             except Exception as e:
                 print(f"Test failure playback error: {e}")
+                traceback.print_exc()  # Print full stack trace for better diagnosis
                 result = False
             finally:
                 # Signal that playback is finished

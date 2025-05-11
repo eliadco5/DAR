@@ -11,12 +11,33 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("Player")
 
-def play_actions(actions, move_event_stride=5, tolerance=15, fail_callback=None):
+def play_actions(actions, move_event_stride=5, tolerance=15, fail_callback=None, start_index=0):
+    print(f"DEBUG: play_actions called with start_index={start_index}, total actions={len(actions)}")
     last_time = 0
     move_count = 0
-    for i, action in enumerate(actions):
+    
+    # If we're starting from the middle, adjust the timing
+    if start_index > 0 and start_index < len(actions):
+        # Get the timestamp of the previous action for timing purposes
+        prev_index = start_index - 1
+        while prev_index >= 0:
+            if 'timestamp' in actions[prev_index]:
+                last_time = actions[prev_index].get('timestamp', 0)
+                print(f"DEBUG: Using timestamp {last_time} from action at index {prev_index}")
+                break
+            prev_index -= 1
+    
+    # Track the actual index in the original action list for proper reporting
+    original_action_index = start_index
+    
+    for i in range(0, len(actions)):  # Always start at 0 for the provided actions
+        action = actions[i]
+        original_action_index = start_index + i  # Track position in original list if caller is using a subset
+        
         # Log action type for debugging
         action_type = action.get('type', 'unknown')
+        print(f"DEBUG: Processing action {i} (original index {original_action_index}): type={action_type}")
+        
         if action_type == 'mouse':
             event_type = action.get('event', 'unknown')
             logger.info(f"Playing action {i+1}/{len(actions)}: {action_type} {event_type}")
@@ -37,6 +58,7 @@ def play_actions(actions, move_event_stride=5, tolerance=15, fail_callback=None)
         if action['type'] == 'mouse' and action['event'] == 'move':
             pass  # No sleep before move events
         elif wait >= 0.1:
+            print(f"DEBUG: Waiting {wait:.2f} seconds before action {i}")
             time.sleep(wait)
         try:
             if action['type'] == 'mouse':
@@ -53,7 +75,8 @@ def play_actions(actions, move_event_stride=5, tolerance=15, fail_callback=None)
                             logger.error(f"Visual check failed at mouse click ({x}, {y})")
                             if fail_callback:
                                 fail_callback(ref_img, test_img)
-                            return False, (ref_img, test_img)
+                            print(f"DEBUG: Returning from play_actions due to failed mouse check at index {i} (original {original_action_index})")
+                            return False, (ref_img, test_img), original_action_index
                     pyautogui.moveTo(action['x'], action['y'])
                     pyautogui.mouseDown()
                 elif action['event'] == 'up':
@@ -116,16 +139,21 @@ def play_actions(actions, move_event_stride=5, tolerance=15, fail_callback=None)
                         logger.error(f"Visual check failed: difference={mean_diff:.2f}, tolerance={tolerance}")
                         if fail_callback:
                             fail_callback(ref_img, test_img)
-                        return False, (ref_img, test_img)
+                        print(f"DEBUG: Returning from play_actions due to failed visual check at index {i} (original {original_action_index})")
+                        return False, (ref_img, test_img), original_action_index
                 else:
                     logger.warning(f"Check action at index {i} has no image data")
         except Exception as e:
             print(f"Playback error at action {i}: {e}")
             logger.exception(f"Playback error at action {i}")
-            return False, None
+            return False, None, original_action_index
         last_time = t
+    
+    # Return the last index in the original action list
+    final_index = start_index + len(actions) - 1
+    print(f"DEBUG: Playback completed successfully, final index = {final_index}")
     logger.info("Playback completed successfully")
-    return True, None
+    return True, None, final_index
 
 class Player:
     def __init__(self):

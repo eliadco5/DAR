@@ -1,76 +1,72 @@
-# Test Suite for Desktop Automation Recorder
+# Test Suite Documentation
 
-This directory contains various test scripts to verify the functionality of the Desktop Automation Recorder.
+This directory contains test scripts for validating the functionality of the application.
 
-## Available Tests
+## Key Test Files
 
-### 1. Core Functionality Tests
+- `test_continue_functionality.py`: Tests the continuation feature during playback
+- `test_check_failure_mode.py`: Tests the check failure handling, particularly with continue and stop buttons
+- `run_tests.py`: Runner script to execute all test files
 
-- **test_full_functionality.py**: Comprehensive test to verify all aspects of the script generator, including check names and comments.
-  ```
-  python test_full_functionality.py
-  ```
+## Running Tests
 
-- **test_ui_comments.py**: Tests the display of comments in the UI with proper styling.
-  ```
-  python test_ui_comments.py
-  ```
+### Method 1: Using the test runner
 
-- **test_hotkeys.py**: Tests the functionality of adding checks and comments through direct method calls.
-  ```
-  python test_hotkeys.py
-  ```
+To run all tests:
 
-### 2. Other Tests
+```bash
+python run_tests.py
+```
 
-- **simple_test.py**: Basic test with minimal actions.
-  ```
-  python simple_test.py
-  ```
+### Method 2: Running individual test files
 
-- **test_flags.py**: Tests the command-line flags for the generated scripts.
-  ```
-  python test_flags.py
-  ```
+To run a specific test file:
 
-- **test_script_gen.py**: Tests script generation options.
-  ```
-  python test_script_gen.py
-  ```
+```bash
+python -m tests.test_continue_functionality
+# or
+python -m tests.test_check_failure_mode
+```
 
-## Running All Tests
-
-To run all tests together, use:
+### Method 3: Using unittest directly
 
 ```bash
 python -m unittest discover tests
 ```
 
-## Test Description
+## Test Structure
 
-### test_full_functionality.py
-This script tests the complete functionality of the Desktop Automation Recorder by:
-1. Creating actions of all types (mouse, keyboard, checks, comments)
-2. Generating a script with custom check names and comments
-3. Verifying that the script includes all expected features
-4. Validating that screenshots are saved correctly
+Each test class follows a similar structure:
 
-### test_ui_comments.py
-This script tests the UI representation of comments by:
-1. Opening the UI and starting a recording session
-2. Adding several test comments
-3. Verifying that they appear in the action list with the correct styling (colors and fonts)
-4. Generating a script and verifying comments are included
+1. **Setup and Teardown**: Initialize the application environment and clean up after tests
+2. **Test Data Creation**: Generate test actions with visual checks
+3. **Event Simulation**: Simulate user interactions like clicking continue or stop
+4. **Validation**: Verify the application behaves correctly in response to these events
 
-### test_hotkeys.py
-This script tests the comment and check functionality by:
-1. Opening the UI and starting a recording session
-2. Directly calling the methods that handle checks and comments
-3. Mocking dialog interaction to simulate user input
-4. Verifying that checks and comments are added to the action list
+## Test Environment
+
+Tests use the PyQt6 event loop to simulate real-world usage. They create a MainWindow instance and interact with it programmatically.
+
+Key concepts:
+- QTimer is used to schedule actions
+- QApplication.processEvents() processes the event queue during waiting periods
+- Tests override certain methods (like showMinimized) to make testing more reliable
 
 ## Troubleshooting
 
-- If you encounter focus issues with dialog windows when using hotkey tests, try using the direct method call approach as implemented in `test_hotkeys.py`.
-- If screenshot verification fails, check that the screenshots directory exists and has proper permissions.
-- For UI tests, make sure to allow sufficient time between operations, especially when dialogs need to appear and process input. 
+If tests fail, check the following:
+
+1. Ensure PyQt6 is properly installed
+2. Verify the project structure is correct
+3. Check for timing issues - tests may need longer timeouts in some environments
+4. Look for modal dialogs that might block test execution
+
+## Adding New Tests
+
+To add a new test:
+
+1. Create a new test file in the tests directory
+2. Import the required modules
+3. Create a test class inheriting from unittest.TestCase
+4. Implement setup, teardown, and test methods
+5. Add your test class to run_tests.py 
