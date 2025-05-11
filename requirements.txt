@@ -2,4 +2,6 @@ pyautogui
 pynput
 pillow
 pyperclip
-PyQt6 
+PyQt6
+jinja2
+requests 

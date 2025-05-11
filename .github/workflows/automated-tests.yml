@@ -1,0 +1,81 @@
+name: Automated UI Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      test_script:
+        description: 'Specific test script to run (leave empty to run all)'
+        required: false
+        default: ''
+      notify:
+        description: 'Send notifications on completion'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  ui-tests:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install jinja2 requests  # For reporting and webhooks
+    
+    - name: Set up virtual display
+      run: |
+        # For Windows, we don't need a virtual display
+        # But we'll set a flag to indicate we're in CI
+        echo "DAR_CI_MODE=1" >> $GITHUB_ENV
+      shell: bash
+    
+    - name: Run all tests
+      if: ${{ !github.event.inputs.test_script }}
+      run: |
+        python -m integration.ci.ci_runner tests/test_full_functionality.py --report all --headless
+        python -m integration.ci.ci_runner tests/test_continue_functionality.py --report all --headless
+      continue-on-error: true
+    
+    - name: Run specific test
+      if: ${{ github.event.inputs.test_script }}
+      run: |
+        python -m integration.ci.ci_runner ${{ github.event.inputs.test_script }} --report all --headless
+      continue-on-error: true
+    
+    - name: Send notifications
+      if: ${{ github.event.inputs.notify == 'true' }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      run: |
+        if [ -n "$SLACK_WEBHOOK_URL" ]; then
+          python -m integration.ci.ci_runner tests/test_full_functionality.py --webhook "$SLACK_WEBHOOK_URL" --report none --headless
+        fi
+        
+        if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+          python -m integration.ci.ci_runner tests/test_full_functionality.py --webhook "$DISCORD_WEBHOOK_URL" --report none --headless
+        fi
+      shell: bash
+    
+    - name: Upload test reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-reports
+        path: |
+          reports/
+          ci_screenshots/ 
