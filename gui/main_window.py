@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QListWidget, QLabel, QStatusBar, QFrame, QFileDialog, QMessageBox, QSizePolicy, QSpinBox, QDialog, QVBoxLayout, QHBoxLayout, QSplitter, QComboBox, QInputDialog, QLineEdit, QListWidgetItem
 )
-from PyQt6.QtCore import Qt, QTimer, QMetaObject, Q_ARG, pyqtSignal, QObject
+from PyQt6.QtCore import Qt, QTimer, QMetaObject, Q_ARG, pyqtSignal, QObject, QEvent
 from PyQt6.QtGui import QIcon, QPixmap, QBrush, QColor, QFont
 from utils.hotkeys import HotkeyManager
 from recorder.session import SessionManager
@@ -657,6 +657,10 @@ class MainWindow(QMainWindow):
         
         # Start new playback thread
         self.set_controls_state(False)
+        
+        # Minimize window before starting playback
+        self.showMinimized()
+        
         self.playback_thread = threading.Thread(target=run_playback, daemon=True)
         self.playback_thread.start()
 
@@ -995,6 +999,11 @@ class MainWindow(QMainWindow):
             self.error_panel.hide()
             return
             
+        # Restore window from minimized state when a check fails
+        self.setWindowState(Qt.WindowState.WindowActive)
+        self.activateWindow()
+        self.raise_()
+            
         # Convert PIL images to QPixmap for display
         ref_qimg = ImageQt.ImageQt(ref_img)
         test_qimg = ImageQt.ImageQt(test_img)
@@ -1037,10 +1046,18 @@ class MainWindow(QMainWindow):
     def _on_playback_finished(self, success):
         """Slot connected to playback_finished signal (runs in main thread)"""
         self.set_controls_state(True)
-        # Update status based on playback result
+        
+        # Restore window from minimized state
+        self.setWindowState(Qt.WindowState.WindowActive)
+        self.activateWindow()
+        self.raise_()
+        
+        # Show popup with test results
         if success:
+            QMessageBox.information(self, "Test Complete", "Playback completed successfully!")
             self.status_label.setText("Playback completed successfully")
         else:
+            QMessageBox.warning(self, "Test Complete", "Playback completed with errors. Check the error panel for details.")
             self.status_label.setText("Playback completed with errors")
     
     def continue_after_error(self):
@@ -1130,6 +1147,10 @@ class MainWindow(QMainWindow):
         
         # Start new playback thread
         self.set_controls_state(False)
+        
+        # Minimize window before starting playback
+        self.showMinimized()
+        
         self.playback_thread = threading.Thread(target=run_test_failure, daemon=True)
         self.playback_thread.start()
 
