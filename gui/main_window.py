@@ -1144,6 +1144,10 @@ class MainWindow(QMainWindow):
         
         self.continue_after_fail = True
         self.error_panel.hide()
+        
+        # Minimize the window before continuing 
+        self.showMinimized()
+        
         self.check_event.set()  # Signal the waiting thread to continue
 
     def test_check_failure(self):
