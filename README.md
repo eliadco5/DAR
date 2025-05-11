@@ -24,4 +24,24 @@ A user-friendly desktop application to record and replay user interactions for a
    ```
 
 ## Project Structure
-See code for details. 
+The project is organized into the following directories:
+- `gui/`: User interface components
+- `recorder/`: Recording functionality
+- `playback/`: Action playback and execution
+- `scriptgen/`: Script generation
+- `storage/`: Saving and loading sessions
+- `utils/`: Utility functions and helpers
+- `tests/`: Test files and test cases
+
+## Testing
+To run the tests, use the following command:
+```bash
+python -m tests.run_tests
+```
+
+Or run individual test files:
+```bash
+python -m tests.test_name
+```
+
+See the `tests/README.md` file for more information on the testing framework. 

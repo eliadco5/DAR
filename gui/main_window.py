@@ -17,6 +17,10 @@ from recorder.screenshot import ScreenshotUtil
 import time
 import os
 import traceback
+from utils.logger import setup_logger
+
+# Set up logger for this module
+logger = setup_logger("MainWindow")
 
 DARK_STYLE = """
 QWidget { background-color: #232629; color: #f0f0f0; }
@@ -375,14 +379,14 @@ class MainWindow(QMainWindow):
         """
         # Only poll if the state is currently recording
         if self.session_manager.state != 'recording':
-            print("DEBUG: Polling stopped because state is", self.session_manager.state)
+            logger.debug("DEBUG: Polling stopped because state is", self.session_manager.state)
             return
             
         # Update the action list with the latest events
         self.update_action_list()
         
         # Schedule the next poll
-        print("DEBUG: Polling for actions...")
+        logger.debug("DEBUG: Polling for actions...")
         QTimer.singleShot(100, self._poll_actions)
 
     def update_action_list(self):
@@ -663,10 +667,10 @@ class MainWindow(QMainWindow):
                     actions = all_actions[start_index:]
                     
                     # Log what we're about to do for debugging
-                    print(f"DEBUG: Starting playback from index {start_index} (of {len(all_actions)} total)")
+                    logger.debug(f"DEBUG: Starting playback from index {start_index} (of {len(all_actions)} total)")
                     if len(actions) > 0:
                         next_action = actions[0]
-                        print(f"DEBUG: Next action type: {next_action.get('type', 'unknown')}")
+                        logger.debug(f"DEBUG: Next action type: {next_action.get('type', 'unknown')}")
                     
                     # Run playback with the configured tolerance, starting with the subset of actions
                     tolerance = self.get_tolerance_value()
@@ -679,30 +683,30 @@ class MainWindow(QMainWindow):
                     
                     # Adjust the index to be relative to the original list
                     actual_last_index = start_index + last_action_index
-                    print(f"DEBUG: Playback returned result={result}, last_action_index={last_action_index}, actual_last_index={actual_last_index}")
+                    logger.debug(f"DEBUG: Playback returned result={result}, last_action_index={last_action_index}, actual_last_index={actual_last_index}")
                     
                     # If playback failed due to visual check
                     if not result and fail_info:
                         # Wait for user to decide whether to continue
-                        print("DEBUG: Waiting for user decision on check failure")
+                        logger.debug("DEBUG: Waiting for user decision on check failure")
                         self.check_event.wait()  # Wait until user makes a decision
-                        print(f"DEBUG: User decided to {'continue' if self.continue_after_fail else 'stop'}")
+                        logger.debug(f"DEBUG: User decided to {'continue' if self.continue_after_fail else 'stop'}")
                         
                         # If user chose to continue, restart playback from the next action
                         if self.continue_after_fail:
                             # Continue from the action after the one that failed
                             start_index = actual_last_index + 1
-                            print(f"DEBUG: Continuing from index {start_index}")
+                            logger.debug(f"DEBUG: Continuing from index {start_index}")
                             continue
                         else:
                             # User chose to stop
-                            print("DEBUG: User chose to stop playback")
+                            logger.debug("DEBUG: User chose to stop playback")
                             break
                     
                     # If we got here, playback completed without errors or was the final segment
                     break
             except Exception as e:
-                print(f"Playback error: {e}")
+                logger.error(f"Playback error: {e}")
                 traceback.print_exc()  # Print full stack trace for better diagnosis
                 result = False
             finally:
@@ -771,11 +775,11 @@ class MainWindow(QMainWindow):
         was_recording = self.session_manager.state == 'recording'
         current_state = self.session_manager.state
         
-        print(f"DEBUG: Executing add check. Current state: {current_state}")
+        logger.debug(f"DEBUG: Executing add check. Current state: {current_state}")
         
         # Pause recording temporarily while showing the dialog
         if was_recording:
-            print("DEBUG: Pausing recording for check dialog")
+            logger.debug("DEBUG: Pausing recording for check dialog")
             self.session_manager.pause()
             # Update the UI to show the paused state
             self.update_pause_resume_button(paused=True)
@@ -788,10 +792,10 @@ class MainWindow(QMainWindow):
                 user32 = ctypes.windll.user32
                 # Remember the current foreground window so we can force focus later
                 foreground_hwnd = user32.GetForegroundWindow()
-                print(f"DEBUG: Current foreground window handle: {foreground_hwnd}")
+                logger.debug(f"DEBUG: Current foreground window handle: {foreground_hwnd}")
                 try_windows_focus = True
             except Exception as e:
-                print(f"DEBUG: Windows focus utilities not available: {e}")
+                logger.debug(f"DEBUG: Windows focus utilities not available: {e}")
                 pass
         
         # Create a custom dialog that will stay on top of all windows
@@ -810,7 +814,7 @@ class MainWindow(QMainWindow):
             Qt.WindowType.FramelessWindowHint  # Remove frame for better focus
         )
         
-        print(f"DEBUG: Dialog window flags: {dialog.windowFlags()}")
+        logger.debug(f"DEBUG: Dialog window flags: {dialog.windowFlags()}")
         
         dialog.setMinimumWidth(400)
         dialog.setModal(True)
@@ -935,7 +939,7 @@ class MainWindow(QMainWindow):
                 try:
                     # Get dialog window handle
                     hwnd = int(dialog.winId())
-                    print(f"DEBUG: Comment dialog window handle: {hwnd}")
+                    logger.debug(f"DEBUG: Comment dialog window handle: {hwnd}")
                     
                     # Windows constants
                     HWND_TOPMOST = -1
@@ -952,13 +956,13 @@ class MainWindow(QMainWindow):
                     # Flash window in taskbar to get user attention
                     user32.FlashWindow(hwnd, True)
                     
-                    print("DEBUG: Windows focus methods applied")
+                    logger.debug("DEBUG: Windows focus methods applied")
                 except Exception as e:
-                    print(f"DEBUG: Windows focus error: {e}")
+                    logger.debug(f"DEBUG: Windows focus error: {e}")
                     traceback.print_exc()
         
         # Use multiple timers with different delays to handle race conditions with window managers
-        print("DEBUG: Setting up focus timers")
+        logger.debug("DEBUG: Setting up focus timers")
         QTimer.singleShot(50, force_focus)
         QTimer.singleShot(150, force_focus)
         QTimer.singleShot(300, force_focus)
@@ -966,12 +970,12 @@ class MainWindow(QMainWindow):
         
         # Short delay before showing dialog to let the system prepare
         # This helps with focus issues on some platforms
-        print("DEBUG: Pre-show delay")
+        logger.debug("DEBUG: Pre-show delay")
         time.sleep(0.2)  # Slightly longer delay than check dialog
         
         # Set up keyboard handling to improve focus
         def keyPressEvent(event):
-            print(f"DEBUG: Dialog key press: {event.key()}")
+            logger.debug(f"DEBUG: Dialog key press: {event.key()}")
             if event.key() == Qt.Key.Key_Escape:
                 dialog.reject()
             elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
@@ -988,10 +992,10 @@ class MainWindow(QMainWindow):
         # Install the key press handler
         dialog.keyPressEvent = keyPressEvent
         
-        print("DEBUG: Showing comment dialog")
+        logger.debug("DEBUG: Showing comment dialog")
         # Show dialog and get result - exec() will block until dialog is closed
         result = dialog.exec()
-        print(f"DEBUG: Dialog result: {result}")
+        logger.debug(f"DEBUG: Dialog result: {result}")
         
         # Get the check name if OK was clicked
         if result == QDialog.DialogCode.Accepted:
@@ -1003,7 +1007,7 @@ class MainWindow(QMainWindow):
         
         # Resume recording if it was active before
         if was_recording:
-            print("DEBUG: Resuming recording after check dialog")
+            logger.debug("DEBUG: Resuming recording after check dialog")
             # Resume and make sure listeners are active
             self.session_manager.resume()
             self.update_pause_resume_button(paused=False)
@@ -1199,13 +1203,13 @@ class MainWindow(QMainWindow):
                 
                 while start_index < len(all_actions):
                     # Log what we're about to do for debugging
-                    print(f"DEBUG: Starting test failure from index {start_index} (of {len(all_actions)} total)")
+                    logger.debug(f"DEBUG: Starting test failure from index {start_index} (of {len(all_actions)} total)")
                     
                     # Create a slice of the actions from current position to the end
                     actions_slice = all_actions[start_index:]
                     if len(actions_slice) > 0:
                         next_action = actions_slice[0]
-                        print(f"DEBUG: Next action type: {next_action.get('type', 'unknown')}")
+                        logger.debug(f"DEBUG: Next action type: {next_action.get('type', 'unknown')}")
                     
                     # Create a modified copy of the actions for testing,
                     # with force_fail set for all check actions
@@ -1219,7 +1223,7 @@ class MainWindow(QMainWindow):
                     
                     # Run playback with the configured tolerance and test actions
                     tolerance = self.get_tolerance_value()
-                    print(f"DEBUG: Submitting {len(test_actions)} actions to play_actions")
+                    logger.debug(f"DEBUG: Submitting {len(test_actions)} actions to play_actions")
                     result, fail_info, last_action_index = play_actions(
                         test_actions, 
                         tolerance=tolerance, 
@@ -1229,30 +1233,30 @@ class MainWindow(QMainWindow):
                     
                     # Adjust the index to be relative to the original list
                     actual_last_index = start_index + last_action_index
-                    print(f"DEBUG: Test playback returned result={result}, last_action_index={last_action_index}, actual_last_index={actual_last_index}")
+                    logger.debug(f"DEBUG: Test playback returned result={result}, last_action_index={last_action_index}, actual_last_index={actual_last_index}")
                     
                     # If playback failed due to visual check (which it should)
                     if not result and fail_info:
                         # Wait for user to decide whether to continue
-                        print("DEBUG: Waiting for user decision on check failure")
+                        logger.debug("DEBUG: Waiting for user decision on check failure")
                         self.check_event.wait()  # Wait until user makes a decision
-                        print(f"DEBUG: User decided to {'continue' if self.continue_after_fail else 'stop'}")
+                        logger.debug(f"DEBUG: User decided to {'continue' if self.continue_after_fail else 'stop'}")
                         
                         # If user chose to continue, restart playback from the next action
                         if self.continue_after_fail:
                             # Continue from the action after the one that failed
                             start_index = actual_last_index + 1
-                            print(f"DEBUG: Continuing test from index {start_index}")
+                            logger.debug(f"DEBUG: Continuing test from index {start_index}")
                             continue
                         else:
                             # User chose to stop
-                            print("DEBUG: User chose to stop test playback")
+                            logger.debug("DEBUG: User chose to stop test playback")
                             break
                     
                     # If we got here, playback completed without errors
                     break
             except Exception as e:
-                print(f"Test failure playback error: {e}")
+                logger.error(f"Test failure playback error: {e}")
                 traceback.print_exc()  # Print full stack trace for better diagnosis
                 result = False
             finally:
@@ -1275,7 +1279,7 @@ class MainWindow(QMainWindow):
 
     def resume_recording(self):
         """Resume recording after it was paused"""
-        print("DEBUG: Manual resume requested")
+        logger.debug("DEBUG: Manual resume requested")
         
         # Only resume if we're actually paused
         if self.session_manager.state == 'paused':
@@ -1317,12 +1321,12 @@ class MainWindow(QMainWindow):
         was_recording = self.session_manager.state == 'recording'
         current_state = self.session_manager.state
         
-        print(f"DEBUG: Executing add comment. Current state: {current_state}")
-        print(f"DEBUG: Window focus fix for comment dialog (F6) initiated")
+        logger.debug(f"DEBUG: Executing add comment. Current state: {current_state}")
+        logger.debug(f"DEBUG: Window focus fix for comment dialog (F6) initiated")
         
         # Pause recording temporarily while showing the dialog
         if was_recording:
-            print("DEBUG: Pausing recording for comment dialog")
+            logger.debug("DEBUG: Pausing recording for comment dialog")
             self.session_manager.pause()
             # Update the UI to show the paused state
             self.update_pause_resume_button(paused=True)
@@ -1335,10 +1339,10 @@ class MainWindow(QMainWindow):
                 user32 = ctypes.windll.user32
                 # Remember the current foreground window so we can force focus later
                 foreground_hwnd = user32.GetForegroundWindow()
-                print(f"DEBUG: Current foreground window handle: {foreground_hwnd}")
+                logger.debug(f"DEBUG: Current foreground window handle: {foreground_hwnd}")
                 try_windows_focus = True
             except Exception as e:
-                print(f"DEBUG: Windows focus utilities not available: {e}")
+                logger.debug(f"DEBUG: Windows focus utilities not available: {e}")
                 traceback.print_exc()  # Print full stack trace for better diagnosis
                 pass
         
@@ -1359,7 +1363,7 @@ class MainWindow(QMainWindow):
             Qt.WindowType.FramelessWindowHint  # Remove frame for better focus
         )
         
-        print(f"DEBUG: Comment dialog window flags: {dialog.windowFlags()}")
+        logger.debug(f"DEBUG: Comment dialog window flags: {dialog.windowFlags()}")
         
         dialog.setMinimumWidth(400)
         dialog.setModal(True)
@@ -1476,7 +1480,7 @@ class MainWindow(QMainWindow):
         # Set up a timer to ensure dialog gets focus - important for external window activation
         def force_focus():
             try:
-                print("DEBUG: Applying comment dialog focus")
+                logger.debug("DEBUG: Applying comment dialog focus")
                 dialog.activateWindow()
                 dialog.raise_()
                 line_edit.setFocus()
@@ -1486,7 +1490,7 @@ class MainWindow(QMainWindow):
                     try:
                         # Get dialog window handle
                         hwnd = int(dialog.winId())
-                        print(f"DEBUG: Comment dialog window handle: {hwnd}")
+                        logger.debug(f"DEBUG: Comment dialog window handle: {hwnd}")
                         
                         # Windows constants
                         HWND_TOPMOST = -1
@@ -1515,17 +1519,17 @@ class MainWindow(QMainWindow):
                         # Flash window in taskbar to get user attention - use multiple flashes
                         user32.FlashWindow(hwnd, True)
                         
-                        print("DEBUG: Windows focus methods applied for comment dialog")
+                        logger.debug("DEBUG: Windows focus methods applied for comment dialog")
                     except Exception as e:
-                        print(f"DEBUG: Windows focus error: {e}")
+                        logger.debug(f"DEBUG: Windows focus error: {e}")
                         traceback.print_exc()  # Print full stack trace for better diagnosis
             except Exception as e:
-                print(f"DEBUG: Focus error: {e}")
+                logger.debug(f"DEBUG: Focus error: {e}")
                 traceback.print_exc()  # Print full stack trace for better diagnosis
         
         # Use multiple timers with different delays to handle race conditions with window managers
         # Use more timing attempts with shorter initial delay
-        print("DEBUG: Setting up comment dialog focus timers")
+        logger.debug("DEBUG: Setting up comment dialog focus timers")
         QTimer.singleShot(20, force_focus)  # Try immediately
         QTimer.singleShot(50, force_focus)  # Try after short delay
         QTimer.singleShot(150, force_focus)
@@ -1535,12 +1539,12 @@ class MainWindow(QMainWindow):
         
         # Short delay before showing dialog to let the system prepare
         # This helps with focus issues on some platforms
-        print("DEBUG: Pre-show delay for comment dialog")
+        logger.debug("DEBUG: Pre-show delay for comment dialog")
         time.sleep(0.2)  # 200ms delay
         
         # Set up keyboard handling to improve focus
         def keyPressEvent(event):
-            print(f"DEBUG: Comment dialog key press: {event.key()}")
+            logger.debug(f"DEBUG: Comment dialog key press: {event.key()}")
             if event.key() == Qt.Key.Key_Escape:
                 dialog.reject()
             elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
@@ -1557,10 +1561,10 @@ class MainWindow(QMainWindow):
         # Install the key press handler
         dialog.keyPressEvent = keyPressEvent
         
-        print("DEBUG: Showing comment dialog")
+        logger.debug("DEBUG: Showing comment dialog")
         # Show dialog and get result - exec() will block until dialog is closed
         result = dialog.exec()
-        print(f"DEBUG: Comment dialog result: {result}")
+        logger.debug(f"DEBUG: Comment dialog result: {result}")
         
         # Get the comment if OK was clicked
         if result == QDialog.DialogCode.Accepted:
@@ -1572,7 +1576,7 @@ class MainWindow(QMainWindow):
         
         # Resume recording if it was active before
         if was_recording:
-            print("DEBUG: Resuming recording after comment dialog")
+            logger.debug("DEBUG: Resuming recording after comment dialog")
             # Resume and make sure listeners are active
             self.session_manager.resume()
             self.update_pause_resume_button(paused=False)
